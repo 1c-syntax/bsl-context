@@ -16,6 +16,10 @@ repositories {
 dependencies {
     testImplementation("junit", "junit", "4.12")
 
+    // com.github.1c-syntax
+    implementation("com.github.1c-syntax", "utils", "4034e83681b")
+    implementation("com.github.1c-syntax", "mdclasses", "86be1579c4")
+
     compileOnly("org.projectlombok", "lombok", lombok.version)
 }
 
