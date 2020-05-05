@@ -3,6 +3,7 @@ import java.net.URI
 plugins {
     java
     id("io.franzbecker.gradle-lombok") version "3.3.0"
+    id("com.github.johnrengelman.shadow") version "5.2.0"
 }
 
 group = "com.github.1c-syntax"
@@ -18,8 +19,6 @@ dependencies {
 
     // com.github.1c-syntax
     implementation("com.github.1c-syntax", "utils", "4034e83681b")
-    implementation("com.github.1c-syntax", "mdclasses", "86be1579c4")
-
     compileOnly("org.projectlombok", "lombok", lombok.version)
 }
 
@@ -30,6 +29,19 @@ configure<JavaPluginConvention> {
 java {
     sourceCompatibility = JavaVersion.VERSION_11
     targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.jar {
+    manifest {
+        attributes["Implementation-Version"] = archiveVersion.get()
+    }
+    enabled = false
+    dependsOn(tasks.shadowJar)
+}
+tasks.shadowJar {
+    project.configurations.implementation.get().isCanBeResolved = true
+    configurations = listOf(project.configurations["implementation"])
+    archiveClassifier.set("")
 }
 
 lombok {
