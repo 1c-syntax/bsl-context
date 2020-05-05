@@ -2,12 +2,14 @@ import java.net.URI
 
 plugins {
     java
+    maven
+    jacoco
     id("io.franzbecker.gradle-lombok") version "3.3.0"
-//    id("com.github.johnrengelman.shadow") version "5.2.0"
+    id("com.github.gradle-git-version-calculator") version "1.1.0"
 }
 
 group = "com.github.1c-syntax"
-version = "0.1"
+version = gitVersionCalculator.calculateVersion("v")
 
 val junitVersion = "5.5.2"
 
@@ -37,18 +39,22 @@ java {
     targetCompatibility = JavaVersion.VERSION_11
 }
 
-//tasks.jar {
-//    manifest {
-//        attributes["Implementation-Version"] = archiveVersion.get()
-//    }
-//    enabled = false
-//    dependsOn(tasks.shadowJar)
-//}
-//tasks.shadowJar {
-//    project.configurations.implementation.get().isCanBeResolved = true
-//    configurations = listOf(project.configurations["implementation"])
-//    archiveClassifier.set("")
-//}
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
+    reports {
+        html.isEnabled = true
+    }
+}
+
+tasks.withType<JavaCompile> {
+    options.encoding = "UTF-8"
+    options.compilerArgs.add("-Xlint:unchecked")
+    options.compilerArgs.add("-parameters")
+}
+
 
 lombok {
     version = "1.18.12"
