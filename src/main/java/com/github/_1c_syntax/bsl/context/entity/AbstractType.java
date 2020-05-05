@@ -1,13 +1,13 @@
 package com.github._1c_syntax.bsl.context.entity;
 
-import lombok.Builder;
-import lombok.Value;
+import lombok.Getter;
+import lombok.Setter;
 
 import java.util.Map;
 
-@Builder
-@Value
-public class AbstractType {
+@Getter
+@Setter
+public abstract class AbstractType {
   String name;
   String nameEn;
   boolean isPrimitive;

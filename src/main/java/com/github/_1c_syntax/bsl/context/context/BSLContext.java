@@ -9,10 +9,16 @@ import java.util.Optional;
 
 public interface BSLContext {
 
+  void initialize();
+
   Map<String, AbstractMethod> getMethods(URI uri);
+
   Optional<AbstractMethod> getMethod(URI uri, String methodName);
+
   Map<String, AbstractType> getTypes(URI uri);
+
   Optional<AbstractType> getType(URI uri, String typeName);
+
   void shutdown();
 
 }
