@@ -19,6 +19,7 @@ dependencies {
 
     // com.github.1c-syntax
     implementation("com.github.1c-syntax", "utils", "4034e83681b")
+    
     compileOnly("org.projectlombok", "lombok", lombok.version)
 }
 
