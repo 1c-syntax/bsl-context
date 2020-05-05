@@ -27,6 +27,11 @@ configure<JavaPluginConvention> {
     sourceCompatibility = JavaVersion.VERSION_11
 }
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
 lombok {
     version = "1.18.12"
     sha256 = "49381508ecb02b3c173368436ef71b24c0d4418ad260e6cc98becbcf4b345406"
