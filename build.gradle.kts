@@ -19,8 +19,8 @@ repositories {
 }
 
 dependencies {
-    testImplementation("junit", "junit", "4.12")
 
+    implementation("org.apache.commons", "commons-collections4", "4.4")
     compileOnly("org.projectlombok", "lombok", lombok.version)
 
     // тестирование

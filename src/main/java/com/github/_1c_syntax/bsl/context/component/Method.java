@@ -1,14 +1,13 @@
-package com.github._1c_syntax.bsl.context.entity;
+package com.github._1c_syntax.bsl.context.component;
 
 import lombok.Builder;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Value;
 
 import java.util.List;
 
-@Getter
-@Setter
-public abstract class AbstractMethod {
+@Value
+@Builder
+public class Method {
   String name;
   String nameEn;
   boolean function;

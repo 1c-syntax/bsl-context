@@ -1,12 +1,12 @@
-package com.github._1c_syntax.bsl.context.entity;
+package com.github._1c_syntax.bsl.context.component;
 
-import lombok.Getter;
-import lombok.Setter;
+import lombok.Builder;
+import lombok.Value;
 
 import java.util.List;
 
-@Getter
-@Setter
+@Value
+@Builder
 public class SignatureMethod {
   String syntax;
   String syntaxEn;
