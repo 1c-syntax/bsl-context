@@ -52,3 +52,27 @@ tasks.withType<JavaCompile> {
     options.compilerArgs.add("-Xlint:unchecked")
     options.compilerArgs.add("-parameters")
 }
+
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+            pom {
+                description.set("Context provider API for 1C:Enterprise 8 language (BSL).")
+                url.set("https://github.com/1c-syntax/bsl-context")
+                licenses {
+                    license {
+                        name.set("GNU LGPL 3")
+                        url.set("https://www.gnu.org/licenses/lgpl-3.0.txt")
+                        distribution.set("repo")
+                    }
+                }
+                scm {
+                    connection.set("scm:git:git://github.com/1c-syntax/bsl-context.git")
+                    developerConnection.set("scm:git:git@github.com:1c-syntax/bsl-context.git")
+                    url.set("https://github.com/1c-syntax/bsl-context")
+                }
+            }
+        }
+    }
+}
