@@ -6,9 +6,9 @@ import java.util.Optional;
 /**
  * Поставщик контекста.
  */
-public interface IContextProvider {
-    List<IContext> getContexts();
-    Optional<IContext> getContextByName(String name);
+public interface ContextProvider {
+    List<Context> getContexts();
+    Optional<Context> getContextByName(String name);
 
     // TODO: события и свойства глобального контекста
 }

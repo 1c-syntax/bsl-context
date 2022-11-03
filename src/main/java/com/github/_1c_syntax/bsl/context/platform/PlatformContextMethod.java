@@ -1,8 +1,8 @@
 package com.github._1c_syntax.bsl.context.platform;
 
 import com.github._1c_syntax.bsl.context.api.ContextName;
-import com.github._1c_syntax.bsl.context.api.IContextMethod;
-import com.github._1c_syntax.bsl.context.api.IContextMethodSignature;
+import com.github._1c_syntax.bsl.context.api.ContextMethod;
+import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 
 import java.util.Collections;
 import java.util.List;
@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * Платформанный контестный метод.
  */
-public class PlatformContextMethod implements IContextMethod {
+public class PlatformContextMethod implements ContextMethod {
     private final ContextName name;
     private final boolean hasReturnValue;
 
@@ -30,7 +30,7 @@ public class PlatformContextMethod implements IContextMethod {
     }
 
     @Override
-    public List<IContextMethodSignature> signatures() {
+    public List<ContextMethodSignature> signatures() {
         return Collections.emptyList(); // TODO: реализовать
     }
 }

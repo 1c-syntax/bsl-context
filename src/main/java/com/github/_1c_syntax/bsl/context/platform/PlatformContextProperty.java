@@ -2,12 +2,12 @@ package com.github._1c_syntax.bsl.context.platform;
 
 import com.github._1c_syntax.bsl.context.api.AccessMode;
 import com.github._1c_syntax.bsl.context.api.ContextName;
-import com.github._1c_syntax.bsl.context.api.IContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextProperty;
 
 /**
  * Платформенное контекстное свойство.
  */
-public class PlatformContextProperty implements IContextProperty {
+public class PlatformContextProperty implements ContextProperty {
     private final ContextName name;
     private final AccessMode accessMode;
 

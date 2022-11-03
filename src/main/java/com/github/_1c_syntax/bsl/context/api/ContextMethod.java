@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * Контекстный метод.
  */
-public interface IContextMethod {
+public interface ContextMethod {
     /**
      * Имя метода.
      */
@@ -17,5 +17,5 @@ public interface IContextMethod {
     /**
      * Сигнатуры метода.
      */
-    List<IContextMethodSignature> signatures();
+    List<ContextMethodSignature> signatures();
 }

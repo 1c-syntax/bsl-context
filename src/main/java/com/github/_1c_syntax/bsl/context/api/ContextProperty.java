@@ -3,7 +3,7 @@ package com.github._1c_syntax.bsl.context.api;
 /**
  * Контекстное свойство.
  */
-public interface IContextProperty {
+public interface ContextProperty {
     /**
      * Имя свойства.
      */

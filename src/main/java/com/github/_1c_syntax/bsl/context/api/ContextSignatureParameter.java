@@ -1,14 +1,11 @@
 package com.github._1c_syntax.bsl.context.api;
 
-import com.github._1c_syntax.bsl.context.api.ContextName;
-import com.github._1c_syntax.bsl.context.api.IContext;
-
 import java.util.List;
 
 /**
  * Параметр контекстной сигнатуры метода.
  */
-public interface IContextSignatureParameter {
+public interface ContextSignatureParameter {
     /**
      * Имя параметра сигнатуры метода.
      */
@@ -20,5 +17,5 @@ public interface IContextSignatureParameter {
     /**
      * Допустимые типы.
      */
-    List<IContext> types();
+    List<Context> types();
 }

@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * Контекстный тип.
  */
-public interface IContextType extends IContext {
+public interface ContextType extends Context {
     /**
      * Контекстный тип включен в глобальный контекст.
      */
@@ -16,10 +16,10 @@ public interface IContextType extends IContext {
     /**
      * Методы контекста.
      */
-    List<IContextMethod> methods();
+    List<ContextMethod> methods();
 
     /**
      * Свойства контекста.
      */
-    List<IContextProperty> properties();
+    List<ContextProperty> properties();
 }

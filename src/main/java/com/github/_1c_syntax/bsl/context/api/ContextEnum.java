@@ -6,13 +6,13 @@ import java.util.List;
 /**
  * Контекстное перечисление.
  */
-public interface IContextEnum extends IContext {
+public interface ContextEnum extends Context {
     @Override
     default ContextKind kind() {
         return ContextKind.ENUM;
     }
 
-    default List<IContextEnumValue> values() {
+    default List<ContextEnumValue> values() {
         return Collections.emptyList();
     }
 }

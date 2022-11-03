@@ -1,7 +1,8 @@
 package com.github._1c_syntax.bsl.context;
 
-import com.github._1c_syntax.bsl.context.api.IContextProvider;
+import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
+import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorage;
 
 import java.nio.file.Path;
 
@@ -16,7 +17,7 @@ public class PlatformContextGrabber {
     /**
      * Провайдер контекста.
      */
-    private IContextProvider provider;
+    private ContextProvider provider;
 
     public PlatformContextGrabber(Path pathToHbk) {
         this.pathToHbk = pathToHbk;
@@ -24,11 +25,12 @@ public class PlatformContextGrabber {
 
     public void readHbk() {
         // TODO реализовать заполнение или чтение на лету
-        // по хорошему должен все равно быть сторадж с кешем или чтение всего СП в сторадж
-        provider = new PlatformContextProvider();
+        var storage = new PlatformContextStorage();
+
+        provider = new PlatformContextProvider(storage);
     }
 
-    public IContextProvider getProvider() {
+    public ContextProvider getProvider() {
         return provider;
     }
 }

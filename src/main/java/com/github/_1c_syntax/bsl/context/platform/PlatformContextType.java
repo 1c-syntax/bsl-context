@@ -2,22 +2,22 @@ package com.github._1c_syntax.bsl.context.platform;
 
 import com.github._1c_syntax.bsl.context.api.ContextKind;
 import com.github._1c_syntax.bsl.context.api.ContextName;
-import com.github._1c_syntax.bsl.context.api.IContextMethod;
-import com.github._1c_syntax.bsl.context.api.IContextProperty;
-import com.github._1c_syntax.bsl.context.api.IContextType;
+import com.github._1c_syntax.bsl.context.api.ContextMethod;
+import com.github._1c_syntax.bsl.context.api.ContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextType;
 
 import java.util.List;
 
 /**
  * Контекстный тип платформы.
  */
-public class PlatformContextType implements IContextType {
+public class PlatformContextType implements ContextType {
     private final ContextName name;
-    private final List<IContextMethod> methods;
-    private final List<IContextProperty> properties;
+    private final List<ContextMethod> methods;
+    private final List<ContextProperty> properties;
     private final boolean includeGlobalContext;
 
-    public PlatformContextType(ContextName name, List<IContextMethod> methods, List<IContextProperty> properties,
+    public PlatformContextType(ContextName name, List<ContextMethod> methods, List<ContextProperty> properties,
                                boolean includeGlobalContext) {
         this.name = name;
         this.includeGlobalContext = includeGlobalContext;
@@ -41,12 +41,12 @@ public class PlatformContextType implements IContextType {
     }
 
     @Override
-    public List<IContextMethod> methods() {
+    public List<ContextMethod> methods() {
         return methods;
     }
 
     @Override
-    public List<IContextProperty> properties() {
+    public List<ContextProperty> properties() {
         return properties;
     }
 }
