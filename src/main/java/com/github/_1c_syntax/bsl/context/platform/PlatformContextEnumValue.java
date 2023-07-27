@@ -17,4 +17,9 @@ public class PlatformContextEnumValue implements ContextEnumValue {
     public ContextName name() {
         return name;
     }
+
+    @Override
+    public String toString() {
+        return name.toString();
+    }
 }

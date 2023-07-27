@@ -33,4 +33,9 @@ public class PlatformContextMethod implements ContextMethod {
     public List<ContextMethodSignature> signatures() {
         return Collections.emptyList(); // TODO: реализовать
     }
+
+    @Override
+    public String toString() {
+        return name.toString();
+    }
 }

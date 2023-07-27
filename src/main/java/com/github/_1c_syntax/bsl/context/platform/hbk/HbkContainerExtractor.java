@@ -17,7 +17,7 @@ public class HbkContainerExtractor {
 
     private static final int BYTES_BY_FILE_INFOS = 12; // int * 4
 
-    private static final Set<String> ACCEPT_FILE_NAMES = Set.of(PACK_BLOCK_NAME, FILE_STORAGE_NAME);
+    private static final Set<String> ACCEPT_FILE_NAMES = Set.of(PACK_BLOCK_NAME); // FILE_STORAGE_NAME
 
     public static Map<String, byte[]> extractHbkEntities(Path pathToHbk) {
         if (!pathToHbk.toFile().exists()) {

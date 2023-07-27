@@ -25,4 +25,9 @@ public class PlatformContextProperty implements ContextProperty {
     public AccessMode accessMode() {
         return accessMode;
     }
+
+    @Override
+    public String toString() {
+        return name.toString();
+    }
 }

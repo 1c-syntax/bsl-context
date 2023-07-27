@@ -27,4 +27,9 @@ public final class ContextName {
     }
 
     // TODO хеш, сравнение
+
+    @Override
+    public String toString() {
+        return String.format("%s (%s)", getName(), getAlias());
+    }
 }

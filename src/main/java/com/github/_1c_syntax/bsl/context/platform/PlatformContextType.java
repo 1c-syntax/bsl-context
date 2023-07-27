@@ -5,12 +5,14 @@ import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextType;
+import lombok.Builder;
 
 import java.util.List;
 
 /**
  * Контекстный тип платформы.
  */
+@Builder
 public class PlatformContextType implements ContextType {
     private final ContextName name;
     private final List<ContextMethod> methods;
@@ -48,5 +50,10 @@ public class PlatformContextType implements ContextType {
     @Override
     public List<ContextProperty> properties() {
         return properties;
+    }
+
+    @Override
+    public String toString() {
+        return name.toString();
     }
 }

@@ -13,8 +13,17 @@ import java.util.TreeMap;
  * Хранилище контекста платформы.
  */
 public class PlatformContextStorage {
-    private final List<Context> contexts = new ArrayList<>();
+    private final List<Context> contexts;
     private final Map<String, Context> contextsByNames = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+
+    public PlatformContextStorage(List<Context> contexts) {
+        this.contexts = contexts;
+
+        contexts.forEach(context -> {
+            contextsByNames.put(context.name().getName(), context);
+            contextsByNames.put(context.name().getAlias(), context);
+        });
+    }
 
     public Optional<Context> getContextByName(String name) {
         return Optional.ofNullable(contextsByNames.getOrDefault(name, null));
