@@ -136,7 +136,7 @@ public class PlatformContextGrabber {
     }
 
     private static PlatformContextStorage createContextStorage(Path homePath, TableOfContent tree) {
-        HbkTreeParser parser = new HbkTreeParser();
+        HbkTreeParser parser = new HbkTreeParser(homePath);
         var contexts = parser.parse(tree);
 
         return new PlatformContextStorage(contexts);

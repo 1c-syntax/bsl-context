@@ -4,7 +4,7 @@ import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
 
 /**
- * Платнформенное контекстное значение перечисления.
+ * Платформенное контекстное значение перечисления.
  */
 public class PlatformContextEnumValue implements ContextEnumValue {
     private final ContextName name;

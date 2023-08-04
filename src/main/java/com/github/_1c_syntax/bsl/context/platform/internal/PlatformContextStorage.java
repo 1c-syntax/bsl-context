@@ -3,7 +3,6 @@ package com.github._1c_syntax.bsl.context.platform.internal;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,6 +36,6 @@ public class PlatformContextStorage {
     }
 
     public List<Context> getContexts() {
-        return contexts; // TODO отдавать иммутабельное
+        return List.copyOf(contexts);
     }
 }

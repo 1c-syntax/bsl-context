@@ -18,4 +18,9 @@ public interface ContextSignatureParameter {
      * Допустимые типы.
      */
     List<Context> types();
+
+    /**
+     * Описание параметра сигнатуры
+     */
+    String description();
 }

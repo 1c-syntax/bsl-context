@@ -1,3 +1,5 @@
+import java.nio.charset.StandardCharsets
+
 plugins {
     id("java")
 }
@@ -12,6 +14,7 @@ repositories {
 
 dependencies {
     implementation("com.github.1c-syntax:bsl-help-toc-parser:ab6c83315d")
+    implementation("org.jsoup:jsoup:1.16.1")
 
     compileOnly("org.projectlombok:lombok:1.18.24")
     annotationProcessor("org.projectlombok:lombok:1.18.24")
@@ -25,4 +28,8 @@ dependencies {
 
 tasks.getByName<Test>("test") {
     useJUnitPlatform()
+}
+
+tasks.withType<JavaCompile>() {
+    options.encoding = "UTF-8"
 }

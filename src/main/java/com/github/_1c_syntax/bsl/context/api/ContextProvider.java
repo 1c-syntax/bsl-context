@@ -9,6 +9,4 @@ import java.util.Optional;
 public interface ContextProvider {
     List<Context> getContexts();
     Optional<Context> getContextByName(String name);
-
-    // TODO: события и свойства глобального контекста
 }

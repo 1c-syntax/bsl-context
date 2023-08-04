@@ -1,6 +1,5 @@
 package com.github._1c_syntax.bsl.context.platform;
 
-import com.github._1c_syntax.bsl.context.api.ContextKind;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
@@ -28,7 +27,7 @@ public class PlatformContextEnum implements ContextEnum {
 
     @Override
     public List<ContextEnumValue> values() {
-        return values;
+        return List.copyOf(values);
     }
 
     @Override
