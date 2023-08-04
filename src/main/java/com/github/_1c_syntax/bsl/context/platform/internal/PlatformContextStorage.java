@@ -2,6 +2,8 @@ package com.github._1c_syntax.bsl.context.platform.internal;
 
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextName;
+import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
+import lombok.Getter;
 
 import java.util.List;
 import java.util.Map;
@@ -13,9 +15,25 @@ import java.util.TreeMap;
  */
 public class PlatformContextStorage {
     private final List<Context> contexts;
+
+    @Getter
+    private final PlatformGlobalContext globalContext;
     private final Map<String, Context> contextsByNames = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
 
     public PlatformContextStorage(List<Context> contexts) {
+
+        var platformGlobalContext = contexts.stream()
+                .filter(c -> c instanceof PlatformGlobalContext)
+                .findFirst()
+                .map(context -> (PlatformGlobalContext) context);
+
+        if (platformGlobalContext.isPresent()) {
+            globalContext = platformGlobalContext.get();
+            contexts.remove(globalContext);
+        } else {
+            globalContext = null;
+        }
+
         this.contexts = contexts;
 
         contexts.forEach(context -> {
@@ -38,4 +56,5 @@ public class PlatformContextStorage {
     public List<Context> getContexts() {
         return List.copyOf(contexts);
     }
+
 }

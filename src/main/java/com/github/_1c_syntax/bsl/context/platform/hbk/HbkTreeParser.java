@@ -58,26 +58,37 @@ public class HbkTreeParser {
     public void visitGlobalContextPage(Page page) {
         List<ContextProperty> properties = Collections.emptyList();
         List<ContextMethod> methods = new ArrayList<>();
-        List<ContextEvent> events = new ArrayList<>();
+        List<ContextEvent> externalConnectionModuleEvents = Collections.emptyList();
+        List<ContextEvent> sessionModuleEvents = Collections.emptyList();
+        List<ContextEvent> ordinaryApplicationEvents = Collections.emptyList();
+        List<ContextEvent> applicationEvents = Collections.emptyList();
 
         for (var subPage : page.children()) {
             if (subPage.title().en().equals("Свойства")) {
                 properties = getPropertiesFromPage(subPage);
             } else if (subPage.htmlPath().contains("methods")) {
                 methods.addAll(getMethodsFromPage(subPage));
-            } else if (subPage.htmlPath().contains("events")) {
-                events.addAll(getEventsFromPage(subPage));
+            } else if (subPage.title().en().equals("События внешнего соединения")) {
+                externalConnectionModuleEvents = getEventsFromPage(subPage);
+            } else if (subPage.title().en().equals("События модуля сеанса")) {
+                sessionModuleEvents = getEventsFromPage(subPage);
+            } else if (subPage.title().en().equals("События обычного приложения")) {
+                ordinaryApplicationEvents = getEventsFromPage(subPage);
+            } else if (subPage.title().en().equals("События приложения")) {
+                applicationEvents = getEventsFromPage(subPage);
             }
         }
 
-        var type = PlatformContextType.builder()
-                .name(new ContextName("Глобальный контекст", "Global context"))
-                .methods(methods)
+        contexts.add(
+            PlatformGlobalContext.builder()
                 .properties(properties)
-                .events(events)
-                .build();
-
-        contexts.add(type);
+                .methods(methods)
+                .applicationEvents(applicationEvents)
+                .ordinaryApplicationEvents(ordinaryApplicationEvents)
+                .sessionModuleEvents(sessionModuleEvents)
+                .externalConnectionModuleEvents(externalConnectionModuleEvents)
+                .build()
+        );
     }
 
     public void visitTypePage(Page page) {
