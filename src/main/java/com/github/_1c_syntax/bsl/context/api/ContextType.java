@@ -6,20 +6,20 @@ import java.util.List;
  * Контекстный тип.
  */
 public interface ContextType extends Context {
-    /**
-     * Контекстный тип включен в глобальный контекст.
-     */
-    default boolean includeGlobalContext() {
-        return true;
-    }
 
     /**
-     * Методы контекста.
+     * Методы типа.
      */
     List<ContextMethod> methods();
 
     /**
-     * Свойства контекста.
+     * Свойства типа.
      */
     List<ContextProperty> properties();
+
+    /**
+     * События типа.
+     */
+    List<ContextEvent> events();
+
 }

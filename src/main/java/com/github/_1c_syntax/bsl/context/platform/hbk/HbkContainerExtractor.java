@@ -90,7 +90,7 @@ public class HbkContainerExtractor {
         return new String(stringArray, StandardCharsets.UTF_16LE);
     }
 
-    private static byte[] getHbkFileBody(ByteBuffer outBuffer, int bodyAddress) throws IOException {
+    private static byte[] getHbkFileBody(ByteBuffer outBuffer, int bodyAddress) {
         outBuffer.position(bodyAddress);
 
         skipBlock(outBuffer, 2);

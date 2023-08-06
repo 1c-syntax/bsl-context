@@ -1,5 +1,7 @@
 package com.github._1c_syntax.bsl.context.api;
 
+import java.util.Objects;
+
 /**
  * Имя любой части контекста.
  */
@@ -26,5 +28,21 @@ public final class ContextName {
         return alias;
     }
 
-    // TODO хеш, сравнение
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ContextName that = (ContextName) o;
+        return name.equalsIgnoreCase(that.name) && alias.equalsIgnoreCase(that.alias);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name, alias);
+    }
+
+    @Override
+    public String toString() {
+        return String.format("%s (%s)", getName(), getAlias());
+    }
 }
