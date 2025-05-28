@@ -22,6 +22,7 @@ public class PlatformContextProvider implements ContextProvider {
         var contexts = getContexts();
 
         contexts.stream()
+                .parallel()
                 .filter(context -> context instanceof PlatformContextType)
                 .flatMap(context -> {
                             var c = (PlatformContextType) context;
@@ -36,6 +37,8 @@ public class PlatformContextProvider implements ContextProvider {
                         c.processRawTypes(contexts);
                     } else if (context instanceof PlatformContextMethod c) {
                         c.processRawTypes(contexts);
+                    } else if (context instanceof PlatformContextEvent c) {
+                        c.processRawTypes(contexts);
                     }
                 });
 
@@ -44,11 +47,14 @@ public class PlatformContextProvider implements ContextProvider {
         Stream.of(globalContext.properties(), globalContext.methods(),
                 globalContext.applicationEvents(), globalContext.externalConnectionModuleEvents(),
                 globalContext.sessionModuleEvents(), globalContext.ordinaryApplicationEvents())
+                .parallel()
                 .flatMap(Collection::stream)
                 .forEach(o -> {
                   if (o instanceof PlatformContextProperty c) {
                     c.processRawTypes(contexts);
                   } else if (o instanceof PlatformContextMethod c) {
+                    c.processRawTypes(contexts);
+                  } else if (o instanceof PlatformContextEvent c) {
                     c.processRawTypes(contexts);
                   }
                 });

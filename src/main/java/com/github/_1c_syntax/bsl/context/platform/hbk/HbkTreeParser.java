@@ -23,8 +23,6 @@ public class HbkTreeParser {
 
     public List<Context> parse(TableOfContent tree) {
 
-        visitPagesFromTree(tree.getPages());
-
         contexts.add(new BooleanType());
         contexts.add(new DateType());
         contexts.add(new NullType());
@@ -33,26 +31,28 @@ public class HbkTreeParser {
         contexts.add(new UndefinedType());
         contexts.add(new ArbitraryType());
 
+        visitPagesFromTree(tree.getPages());
+
         return contexts;
     }
 
     public void visitPagesFromTree(List<Page> pages) {
-        for (var page : pages) {
-            // страницы-заглушки не интересны в парсере
-            if (page.htmlPath().isEmpty()) {
-                continue;
-            }
 
-            if (isGlobalContextPage(page)) {
-                visitGlobalContextPage(page);
-            } else if (isCatalogPage(page)) {
-                visitPagesFromTree(page.children());
-            } else if (isEnumPage(page)) {
-                visitEnumPage(page);
-            } else {
-                visitTypePage(page);
-            }
-        }
+       pages.parallelStream()
+           // страницы-заглушки не интересны в парсере
+           .filter(page -> !page.htmlPath().isEmpty())
+           .forEach(page -> {
+               if (isGlobalContextPage(page)) {
+                   visitGlobalContextPage(page);
+               } else if (isCatalogPage(page)) {
+                   visitPagesFromTree(page.children());
+               } else if (isEnumPage(page)) {
+                   visitEnumPage(page);
+               } else {
+                   visitTypePage(page);
+               }
+           });
+
     }
 
     public void visitGlobalContextPage(Page page) {
@@ -93,9 +93,9 @@ public class HbkTreeParser {
 
     public void visitTypePage(Page page) {
 
-        List<ContextProperty> properties = Collections.emptyList();
-        List<ContextMethod> methods = Collections.emptyList();
-        List<ContextEvent> events = Collections.emptyList();
+      List<ContextProperty> properties = Collections.emptyList();
+      List<ContextMethod> methods = Collections.emptyList();
+      List<ContextEvent> events = Collections.emptyList();
 
         for (var subPage : page.children()) {
           switch (subPage.title().en()) {
