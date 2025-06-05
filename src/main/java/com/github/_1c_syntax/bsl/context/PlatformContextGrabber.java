@@ -6,6 +6,7 @@ import com.github._1c_syntax.bsl.context.platform.hbk.HbkContainerExtractor;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkTreeParser;
 import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorage;
 import com.github.eightm.lib.TableOfContent;
+import lombok.Getter;
 
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -21,8 +22,6 @@ import java.util.zip.ZipInputStream;
  * Граббер контекста платформы.
  */
 public class PlatformContextGrabber {
-    private static final String BASE_DIRECTORY = System.getProperty("user.home");
-
     private final Path homePath;
 
     /**
@@ -32,12 +31,8 @@ public class PlatformContextGrabber {
     /**
      * Провайдер контекста.
      */
+    @Getter
     private ContextProvider provider;
-
-    public PlatformContextGrabber(Path pathToHbk) {
-        this.pathToHbk = pathToHbk;
-        this.homePath = Path.of(BASE_DIRECTORY, ".bsl-ls", "8.3.10");
-    }
 
     public PlatformContextGrabber(Path pathToHbk, Path homePath) {
         this.pathToHbk = pathToHbk;
@@ -47,7 +42,7 @@ public class PlatformContextGrabber {
     public void parse() throws IOException {
         var entities = HbkContainerExtractor.extractHbkEntities(pathToHbk);
 
-        //unpackFileStorage(homePath, entities.get("FileStorage"));
+      unpackFileStorage(homePath, entities.get("FileStorage"));
         var tree = getTreeSyntaxHelper(entities.get("PackBlock"));
 
         var storage = createContextStorage(homePath, tree);
@@ -55,10 +50,6 @@ public class PlatformContextGrabber {
         // TODO реализовать заполнение или чтение на лету
         //var storage = new PlatformContextStorage();
         provider = new PlatformContextProvider(storage);
-    }
-
-    public ContextProvider getProvider() {
-        return provider;
     }
 
     // https://www.baeldung.com/java-compress-and-uncompress

@@ -8,8 +8,12 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.nodes.TextNode;
 import org.jsoup.parser.Tag;
+
 import java.nio.file.Path;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.regex.Pattern;
 
 public class HtmlParser {
@@ -281,21 +285,8 @@ public class HtmlParser {
         if (node.attr("class").equals("V8SH_chapter")) {
           descriptionSection = false;
         } else {
-
-          var text = "";
-
-          if (node instanceof TextNode n) {
-            text = n.text();
-          } else if (node instanceof Element n) {
-            text = n.wholeText();
-          }
-
-          text = text.replace(";", ";\n")
-                  .replace(":", ":\n");
-
           result.description = result.description
-                  .concat(text);
-
+            .concat(getDescription(node));
         }
 
       }
@@ -370,6 +361,114 @@ public class HtmlParser {
 
   }
 
+  @SneakyThrows
+  protected ConstructorDescription parseConstructorPage(Page page) {
+    final var document = Jsoup.parse(
+      pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
+    );
+
+    var result = new ConstructorDescription();
+    MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
+
+    var isDescription = false;
+    var isParameters = false;
+    var isTypeSection = false;
+
+    for (Node node : document.body().childNodes()) {
+      final var className = node.hasAttr("class") ? node.attr("class") : "";
+      if ((className.equals("V8SH_pagetitle") || className.equals("V8SH_heading")) && node instanceof Element n) {
+        result.name = n.text();
+        continue;
+      }
+
+      if (className.equals("V8SH_chapter") && node instanceof Element n) {
+        isDescription = false;
+        isParameters = false;
+        isTypeSection = false;
+
+        switch (n.text()) {
+          case "Параметры:" -> isParameters = true;
+          case "Описание:" -> isDescription = true;
+        }
+        continue;
+      }
+
+      if (isDescription) {
+        result.description = result.description.concat(getDescription(node));
+      } else if (isParameters) {
+        if (className.equals("V8SH_rubric")
+          && node instanceof Element n) {
+
+          if (currentMethodSignatureParameterDescription != null) {
+            result.parameters.add(currentMethodSignatureParameterDescription);
+          }
+
+          currentMethodSignatureParameterDescription = new MethodSignatureParameterDescription();
+
+          var match = parameterNamePattern.matcher(n.text());
+
+          if (match.find()) { // Параметр метода
+            currentMethodSignatureParameterDescription.name = match.group(1);
+            currentMethodSignatureParameterDescription.isRequired = match.group(2)
+              .equalsIgnoreCase("Обязательный");
+          } else { // Параметр события
+
+            currentMethodSignatureParameterDescription.name = n.text();
+            currentMethodSignatureParameterDescription.isRequired = true;
+
+          }
+
+        } else {
+
+          if (node instanceof TextNode n && n.text().contains("Тип:")) {
+            isTypeSection = true;
+
+            if (n.text().contains("Произвольный")) {
+              currentMethodSignatureParameterDescription.types.add("Произвольный");
+            }
+
+          } else if (isTypeSection) {
+
+            if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+              isTypeSection = false;
+            } else if (node instanceof Element n) {
+              currentMethodSignatureParameterDescription.types.add(n.text());
+            } else if (node instanceof TextNode n && n.text().contains("Произвольный")) {
+              currentMethodSignatureParameterDescription.types.add("Произвольный");
+            }
+
+          } else if (node.attr("class").equals("V8SH_chapter")) {
+            isParameters = false;
+          } else {
+            currentMethodSignatureParameterDescription.description = currentMethodSignatureParameterDescription.description
+              .concat(getDescription(node));
+          }
+        }
+      }
+    }
+
+    if (currentMethodSignatureParameterDescription != null) {
+      result.parameters.add(currentMethodSignatureParameterDescription);
+    }
+
+    return result;
+  }
+
+  private String getDescription(Node node) {
+    var text = "";
+
+    if (node instanceof TextNode n) {
+      text = n.text();
+    } else if (node instanceof Element n) {
+      text = n.wholeText();
+    }
+
+    text = text.replace(";", ";\n")
+      .replace(":", ":\n");
+
+    return text;
+  }
+
   @Getter
   protected static class PropertyDescription {
     private String accessMode = "";
@@ -418,5 +517,15 @@ public class HtmlParser {
     private MethodSignatureParameterDescription() {
     }
 
+  }
+
+  @Getter
+  protected static class ConstructorDescription {
+    private final List<MethodSignatureParameterDescription> parameters = new ArrayList<>();
+    private String name = "";
+    private String description = "";
+
+    private ConstructorDescription() {
+    }
   }
 }

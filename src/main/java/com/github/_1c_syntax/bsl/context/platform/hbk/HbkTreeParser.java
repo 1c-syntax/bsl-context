@@ -1,8 +1,33 @@
 package com.github._1c_syntax.bsl.context.platform.hbk;
 
-import com.github._1c_syntax.bsl.context.api.*;
-import com.github._1c_syntax.bsl.context.platform.*;
-import com.github._1c_syntax.bsl.context.platform.primitive.*;
+import com.github._1c_syntax.bsl.context.api.AccessMode;
+import com.github._1c_syntax.bsl.context.api.Availability;
+import com.github._1c_syntax.bsl.context.api.Context;
+import com.github._1c_syntax.bsl.context.api.ContextConstructor;
+import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
+import com.github._1c_syntax.bsl.context.api.ContextEvent;
+import com.github._1c_syntax.bsl.context.api.ContextMethod;
+import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
+import com.github._1c_syntax.bsl.context.api.ContextName;
+import com.github._1c_syntax.bsl.context.api.ContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextSignatureParameter;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextConstructor;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextEnum;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextEnumValue;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextEvent;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextMethod;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextMethodSignature;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextProperty;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParameter;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
+import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
+import com.github._1c_syntax.bsl.context.platform.primitive.ArbitraryType;
+import com.github._1c_syntax.bsl.context.platform.primitive.BooleanType;
+import com.github._1c_syntax.bsl.context.platform.primitive.DateType;
+import com.github._1c_syntax.bsl.context.platform.primitive.NullType;
+import com.github._1c_syntax.bsl.context.platform.primitive.NumberType;
+import com.github._1c_syntax.bsl.context.platform.primitive.StringType;
+import com.github._1c_syntax.bsl.context.platform.primitive.UndefinedType;
 import com.github.eightm.lib.Page;
 import com.github.eightm.lib.TableOfContent;
 
@@ -38,20 +63,20 @@ public class HbkTreeParser {
 
     public void visitPagesFromTree(List<Page> pages) {
 
-       pages.parallelStream()
-           // страницы-заглушки не интересны в парсере
-           .filter(page -> !page.htmlPath().isEmpty())
-           .forEach(page -> {
-               if (isGlobalContextPage(page)) {
-                   visitGlobalContextPage(page);
-               } else if (isCatalogPage(page)) {
-                   visitPagesFromTree(page.children());
-               } else if (isEnumPage(page)) {
-                   visitEnumPage(page);
-               } else {
-                   visitTypePage(page);
-               }
-           });
+        pages.parallelStream()
+            // страницы-заглушки не интересны в парсере
+            .filter(page -> !page.htmlPath().isEmpty())
+            .forEach(page -> {
+                if (isGlobalContextPage(page)) {
+                    visitGlobalContextPage(page);
+                } else if (isCatalogPage(page)) {
+                    visitPagesFromTree(page.children());
+                } else if (isEnumPage(page)) {
+                    visitEnumPage(page);
+                } else {
+                    visitTypePage(page);
+                }
+            });
 
     }
 
@@ -93,24 +118,27 @@ public class HbkTreeParser {
 
     public void visitTypePage(Page page) {
 
-      List<ContextProperty> properties = Collections.emptyList();
-      List<ContextMethod> methods = Collections.emptyList();
-      List<ContextEvent> events = Collections.emptyList();
+        List<ContextProperty> properties = Collections.emptyList();
+        List<ContextMethod> methods = Collections.emptyList();
+        List<ContextEvent> events = Collections.emptyList();
+        List<ContextConstructor> constructors = Collections.emptyList();
 
         for (var subPage : page.children()) {
-          switch (subPage.title().en()) {
-            case "Свойства" -> properties = getPropertiesFromPage(subPage);
-            case "Методы" -> methods = getMethodsFromPage(subPage);
-            case "События" -> events = getEventsFromPage(subPage);
-          }
+            switch (subPage.title().en()) {
+                case "Свойства" -> properties = getPropertiesFromPage(subPage);
+                case "Методы" -> methods = getMethodsFromPage(subPage);
+                case "События" -> events = getEventsFromPage(subPage);
+                case "Конструкторы" -> constructors = getConstructors(subPage);
+            }
         }
 
         var type = PlatformContextType.builder()
-                .name(new ContextName(page.title().ru(), page.title().en()))
-                .methods(methods)
-                .properties(properties)
-                .events(events)
-                .build();
+            .name(new ContextName(page.title().ru(), page.title().en()))
+            .methods(methods)
+            .properties(properties)
+            .events(events)
+            .constructors(constructors)
+            .build();
 
         contexts.add(type);
     }
@@ -118,144 +146,170 @@ public class HbkTreeParser {
     private void visitEnumPage(Page page) {
         var properties = getEnumValuesFromPage(page);
         var type = PlatformContextEnum.builder()
-                .name(new ContextName(page.title().ru(), page.title().en()))
-                .values(properties)
-                .build();
+            .name(new ContextName(page.title().ru(), page.title().en()))
+            .values(properties)
+            .build();
         contexts.add(type);
     }
 
     private List<ContextEnumValue> getEnumValuesFromPage(Page page) {
         return page.children().stream()
-                .filter(it -> it.htmlPath().contains("/properties/"))
-                .map(it -> new PlatformContextEnumValue(new ContextName(it.title().ru(), it.title().en())))
-                .collect(Collectors.toList());
+            .filter(it -> it.htmlPath().contains("/properties/"))
+            .map(it -> new PlatformContextEnumValue(new ContextName(it.title().ru(), it.title().en())))
+            .collect(Collectors.toList());
     }
 
     private List<ContextMethod> getMethodsFromPage(Page page) {
         return page.children().stream()
-                .map(it -> {
+            .map(it -> {
 
-                    var methodDescription = htmlParser.parseMethodPage(it);
+                var methodDescription = htmlParser.parseMethodPage(it);
 
-                    var availabilities = methodDescription.getAvailabilities()
-                            .stream()
-                            .map(Availability::findByName)
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .toList();
+                var availabilities = methodDescription.getAvailabilities()
+                    .stream()
+                    .map(Availability::findByName)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .toList();
 
-                    var signatures = methodDescription.getSignatures()
-                            .stream()
-                            .map(methodSignatureDescription ->
-                                PlatformContextMethodSignature.builder()
-                                    .description(methodSignatureDescription.getDescription())
-                                    .name(new ContextName(methodSignatureDescription.getName(), ""))
-                                    .parameters(
-                                            methodSignatureDescription.getParameters()
-                                                    .stream()
-                                                    .map(methodSignatureParameterDescription ->
-                                                        PlatformContextSignatureParameter.builder()
-                                                            .description(methodSignatureParameterDescription.getDescription())
-                                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
-                                                            .isRequired(methodSignatureParameterDescription.isRequired())
-                                                            .rawTypes(methodSignatureParameterDescription.getTypes())
-                                                            .build())
-                                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
-                                                    .toList()
-                                    )
-                                    .build())
-                            .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
-                            .toList();
+                var signatures = methodDescription.getSignatures()
+                    .stream()
+                    .map(methodSignatureDescription ->
+                        PlatformContextMethodSignature.builder()
+                            .description(methodSignatureDescription.getDescription())
+                            .name(new ContextName(methodSignatureDescription.getName(), ""))
+                            .parameters(
+                                methodSignatureDescription.getParameters()
+                                    .stream()
+                                    .map(methodSignatureParameterDescription ->
+                                        PlatformContextSignatureParameter.builder()
+                                            .description(methodSignatureParameterDescription.getDescription())
+                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
+                                            .isRequired(methodSignatureParameterDescription.isRequired())
+                                            .rawTypes(methodSignatureParameterDescription.getTypes())
+                                            .build())
+                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
+                                    .toList()
+                            )
+                            .build())
+                    .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
+                    .toList();
 
-                    return PlatformContextMethod.builder()
-                            .name(new ContextName(it.title().ru(), it.title().en()))
-                            .description(methodDescription.getDescription())
-                            .availabilities(availabilities)
-                            .rawReturnValues(methodDescription.getReturnValues())
-                            .signatures(signatures)
-                            .build();
+                return PlatformContextMethod.builder()
+                    .name(new ContextName(it.title().ru(), it.title().en()))
+                    .description(methodDescription.getDescription())
+                    .availabilities(availabilities)
+                    .rawReturnValues(methodDescription.getReturnValues())
+                    .signatures(signatures)
+                    .build();
 
-                })
-                .collect(Collectors.toList());
+            })
+            .collect(Collectors.toList());
+    }
+
+    private List<ContextConstructor> getConstructors(Page page) {
+        return page.children().stream()
+            .map(this::getConstructor)
+            .collect(Collectors.toList());
+    }
+
+    private ContextConstructor getConstructor(Page page) {
+
+        var constructorDescription = htmlParser.parseConstructorPage(page);
+
+        return PlatformContextConstructor.builder()
+            .name(new ContextName(page.title().ru(), page.title().en()))
+            .description(constructorDescription.getDescription())
+            .parameters(constructorDescription.getParameters().stream()
+                .map(methodSignatureParameterDescription ->
+                    PlatformContextSignatureParameter.builder()
+                        .description(methodSignatureParameterDescription.getDescription())
+                        .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
+                        .isRequired(methodSignatureParameterDescription.isRequired())
+                        .rawTypes(methodSignatureParameterDescription.getTypes())
+                        .build())
+                .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
+                .toList())
+            .build();
     }
 
     private List<ContextEvent> getEventsFromPage(Page page) {
         return page.children().stream()
-                .map(it -> {
+            .map(it -> {
 
-                    var methodDescription = htmlParser.parseMethodPage(it);
+                var methodDescription = htmlParser.parseMethodPage(it);
 
-                    var availabilities = methodDescription.getAvailabilities()
-                            .stream()
-                            .map(Availability::findByName)
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .toList();
+                var availabilities = methodDescription.getAvailabilities()
+                    .stream()
+                    .map(Availability::findByName)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .toList();
 
-                    var signatures = methodDescription.getSignatures()
-                            .stream()
-                            .map(methodSignatureDescription ->
-                                PlatformContextMethodSignature.builder()
-                                    .description(methodSignatureDescription.getDescription())
-                                    .name(new ContextName(methodSignatureDescription.getName(), ""))
-                                    .parameters(
-                                            methodSignatureDescription.getParameters()
-                                                    .stream()
-                                                    .map(methodSignatureParameterDescription ->
-                                                        PlatformContextSignatureParameter.builder()
-                                                            .description(methodSignatureParameterDescription.getDescription())
-                                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
-                                                            .isRequired(methodSignatureParameterDescription.isRequired())
-                                                            .rawTypes(methodSignatureParameterDescription.getTypes())
-                                                            .build())
-                                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
-                                                    .toList()
-                                    )
-                                    .build())
-                            .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
-                            .toList();
+                var signatures = methodDescription.getSignatures()
+                    .stream()
+                    .map(methodSignatureDescription ->
+                        PlatformContextMethodSignature.builder()
+                            .description(methodSignatureDescription.getDescription())
+                            .name(new ContextName(methodSignatureDescription.getName(), ""))
+                            .parameters(
+                                methodSignatureDescription.getParameters()
+                                    .stream()
+                                    .map(methodSignatureParameterDescription ->
+                                        PlatformContextSignatureParameter.builder()
+                                            .description(methodSignatureParameterDescription.getDescription())
+                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
+                                            .isRequired(methodSignatureParameterDescription.isRequired())
+                                            .rawTypes(methodSignatureParameterDescription.getTypes())
+                                            .build())
+                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
+                                    .toList()
+                            )
+                            .build())
+                    .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
+                    .toList();
 
-                    return PlatformContextEvent.builder()
-                            .name(new ContextName(it.title().ru(), it.title().en()))
-                            .description(methodDescription.getDescription())
-                            .availabilities(availabilities)
-                            .signatures(signatures)
-                            .build();
+                return PlatformContextEvent.builder()
+                    .name(new ContextName(it.title().ru(), it.title().en()))
+                    .description(methodDescription.getDescription())
+                    .availabilities(availabilities)
+                    .signatures(signatures)
+                    .build();
 
-                })
-                .collect(Collectors.toList());
+            })
+            .collect(Collectors.toList());
     }
 
     private List<ContextProperty> getPropertiesFromPage(Page page) {
         return page.children().stream()
-                .filter(it -> it.htmlPath().contains("/properties/")) // TODO проверить на обязательность
-                .filter(it -> {
-                    // TODO если имя начинается с < , то это расширение типа из конфигурации.
-                    return !it.title().ru().startsWith("<");
-                })
-                .map(it -> {
+            .filter(it -> it.htmlPath().contains("/properties/")) // TODO проверить на обязательность
+            .filter(it -> {
+                // TODO если имя начинается с < , то это расширение типа из конфигурации.
+                return !it.title().ru().startsWith("<");
+            })
+            .map(it -> {
 
-                    var propertyDescription = htmlParser.parsePropertyPage(it);
+                var propertyDescription = htmlParser.parsePropertyPage(it);
 
-                    var accessMode = AccessMode.findByName(propertyDescription.getAccessMode());
-                    var description = propertyDescription.getDescription();
-                    List<Availability> availabilities = propertyDescription.getAvailabilities()
-                            .stream()
-                            .map(Availability::findByName)
-                            .filter(Optional::isPresent)
-                            .map(Optional::get)
-                            .toList();
+                var accessMode = AccessMode.findByName(propertyDescription.getAccessMode());
+                var description = propertyDescription.getDescription();
+                List<Availability> availabilities = propertyDescription.getAvailabilities()
+                    .stream()
+                    .map(Availability::findByName)
+                    .filter(Optional::isPresent)
+                    .map(Optional::get)
+                    .toList();
 
-                    return PlatformContextProperty.builder()
-                            .name(new ContextName(it.title().ru(), it.title().en()))
-                            .accessMode(accessMode.orElse(AccessMode.READ_WRITE))
-                            .rawTypes(propertyDescription.getTypes())
-                            .description(description)
-                            .availabilities(availabilities)
-                            .build();
+                return PlatformContextProperty.builder()
+                    .name(new ContextName(it.title().ru(), it.title().en()))
+                    .accessMode(accessMode.orElse(AccessMode.READ_WRITE))
+                    .rawTypes(propertyDescription.getTypes())
+                    .description(description)
+                    .availabilities(availabilities)
+                    .build();
 
-                })
-                .collect(Collectors.toList());
+            })
+            .collect(Collectors.toList());
     }
 
     private boolean isCatalogPage(Page page) {
