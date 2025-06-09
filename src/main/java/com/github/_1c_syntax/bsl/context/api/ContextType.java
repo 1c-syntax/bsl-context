@@ -22,4 +22,9 @@ public interface ContextType extends Context {
      */
     List<ContextEvent> events();
 
+    /**
+     * Конструкторы объекта
+     */
+    List<ContextConstructor> constructors();
+
 }

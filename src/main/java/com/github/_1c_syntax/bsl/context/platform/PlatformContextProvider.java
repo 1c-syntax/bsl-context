@@ -7,6 +7,7 @@ import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorag
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
@@ -25,19 +26,25 @@ public class PlatformContextProvider implements ContextProvider {
                 .parallel()
                 .filter(context -> context instanceof PlatformContextType)
                 .flatMap(context -> {
-                            var c = (PlatformContextType) context;
+                    var c = (PlatformContextType) context;
 
-                            return Stream.concat(
-                                Stream.concat(c.properties().stream(), c.methods().stream()),
-                                    c.events().stream()
+                    return
+                        Stream.of(
+                            c.properties().stream(),
+                            c.methods().stream(),
+                            c.events().stream(),
+                            c.constructors().stream()
                             );
-                        })
+                })
+            .flatMap(Function.identity())
                 .forEach(context -> {
                     if (context instanceof PlatformContextProperty c) {
                         c.processRawTypes(contexts);
                     } else if (context instanceof PlatformContextMethod c) {
                         c.processRawTypes(contexts);
                     } else if (context instanceof PlatformContextEvent c) {
+                        c.processRawTypes(contexts);
+                    } else if (context instanceof PlatformContextConstructor c) {
                         c.processRawTypes(contexts);
                     }
                 });

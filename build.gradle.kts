@@ -1,10 +1,10 @@
-import java.nio.charset.StandardCharsets
-
 plugins {
     id("java")
+    `maven-publish`
 }
 
 group = "com.github._1c_syntax.bsl"
+
 version = "1.0-SNAPSHOT"
 
 repositories {
@@ -23,9 +23,18 @@ dependencies {
     testAnnotationProcessor("org.projectlombok:lombok:1.18.24")
 
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.8.1")
+    // https://mvnrepository.com/artifact/org.assertj/assertj-core
+    testImplementation("org.assertj:assertj-core:3.27.3")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.8.1")
 }
 
+publishing {
+    publications {
+        create<MavenPublication>("maven") {
+            from(components["java"])
+        }
+    }
+}
 tasks.getByName<Test>("test") {
     useJUnitPlatform()
 }
