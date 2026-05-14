@@ -42,8 +42,25 @@ public class HbkTreeParser {
     private final List<Context> contexts = new ArrayList<>();
     private final HtmlParser htmlParser;
 
+    /**
+     * Создаёт обходчик на распакованном каталоге страниц. Использовать
+     * там, где FileStorage уже распакован (тесты).
+     */
     public HbkTreeParser(Path pagesPath) {
-        htmlParser = new HtmlParser(pagesPath);
+        this(new HtmlParser(pagesPath));
+    }
+
+    /**
+     * Создаёт обходчик на произвольном источнике страниц. В production-коде
+     * передаётся {@link PageSource.InMemory}, чтобы избежать распаковки
+     * тысяч мелких файлов на файловую систему.
+     */
+    public HbkTreeParser(PageSource pageSource) {
+        this(new HtmlParser(pageSource));
+    }
+
+    private HbkTreeParser(HtmlParser htmlParser) {
+        this.htmlParser = htmlParser;
     }
 
     public List<Context> parse(TableOfContent tree) {

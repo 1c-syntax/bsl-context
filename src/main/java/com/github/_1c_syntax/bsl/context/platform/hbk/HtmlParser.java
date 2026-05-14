@@ -3,7 +3,6 @@ package com.github._1c_syntax.bsl.context.platform.hbk;
 import com.github.eightm.lib.Page;
 import lombok.Getter;
 import lombok.SneakyThrows;
-import org.jsoup.Jsoup;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.nodes.TextNode;
@@ -19,7 +18,7 @@ import java.util.regex.Pattern;
 
 public class HtmlParser {
 
-  private final Path pagesPath;
+  private final PageSource pageSource;
   /**
    * Распознаёт оба формата имени параметра в синтакс-помощнике:
    * <ul>
@@ -33,8 +32,20 @@ public class HtmlParser {
   private static final Pattern SINCE_VERSION_PATTERN = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?(?:\\.\\d+)?)");
   private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("Значение по умолчанию:\\n?\\s*([^.\\n]+?)\\.");
 
+  /**
+   * Создаёт парсер на источнике страниц (in-memory или файловая система).
+   */
+  public HtmlParser(PageSource pageSource) {
+    this.pageSource = pageSource;
+  }
+
+  /**
+   * Конструктор для обратной совместимости — страницы лежат на файловой
+   * системе по пути {@code pagesPath}. Используется тестами на
+   * распакованных фикстурах.
+   */
   public HtmlParser(Path pagesPath) {
-    this.pagesPath = pagesPath;
+    this(new PageSource.FileSystem(pagesPath));
   }
 
   /**
@@ -134,9 +145,7 @@ public class HtmlParser {
    */
   @SneakyThrows
   protected EnumValueDescription parseEnumValuePage(Page page) {
-    final var document = Jsoup.parse(
-        pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
-    );
+    final var document = pageSource.parse(page.htmlPath());
     var result = new EnumValueDescription();
 
     var descriptionSection = false;
@@ -171,9 +180,7 @@ public class HtmlParser {
   @SneakyThrows
   protected PropertyDescription parsePropertyPage(Page page) {
 
-    final var document = Jsoup.parse(
-            pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
-    );
+    final var document = pageSource.parse(page.htmlPath());
 
     var result = new PropertyDescription();
 
@@ -289,9 +296,7 @@ public class HtmlParser {
   @SneakyThrows
   protected MethodDescription parseMethodPage(Page page) {
 
-    final var document = Jsoup.parse(
-            pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
-    );
+    final var document = pageSource.parse(page.htmlPath());
     var result = new MethodDescription();
 
     var hasOverloads = document.text().contains("Вариант синтаксиса:");
@@ -589,9 +594,7 @@ public class HtmlParser {
 
   @SneakyThrows
   protected ConstructorDescription parseConstructorPage(Page page) {
-    final var document = Jsoup.parse(
-      pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
-    );
+    final var document = pageSource.parse(page.htmlPath());
 
     var result = new ConstructorDescription();
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;

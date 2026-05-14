@@ -100,97 +100,86 @@ public class PlatformContextGrabber {
     }
 
     public void parse() throws IOException {
+        boolean profile = "true".equals(System.getProperty("bslContext.profile"))
+            || "true".equals(System.getenv("BSL_CONTEXT_PROFILE"));
+
+        long t0 = System.currentTimeMillis();
         var entities = HbkContainerExtractor.extractHbkEntities(pathToHbk);
+        long tExtract = System.currentTimeMillis();
 
-      unpackFileStorage(homePath, entities.get("FileStorage"));
+        var pages = readFileStorageIntoMemory(entities.get("FileStorage"));
+        long tRead = System.currentTimeMillis();
+
         var tree = getTreeSyntaxHelper(entities.get("PackBlock"));
+        long tTree = System.currentTimeMillis();
 
-        var storage = createContextStorage(homePath, tree);
+        var pageSource = new com.github._1c_syntax.bsl.context.platform.hbk.PageSource.InMemory(pages);
+        var parser = new HbkTreeParser(pageSource);
+        var contexts = parser.parse(tree);
+        var storage = new PlatformContextStorage(contexts);
+        long tStorage = System.currentTimeMillis();
 
-        // TODO реализовать заполнение или чтение на лету
-        //var storage = new PlatformContextStorage();
         provider = new PlatformContextProvider(storage);
+        long tProvider = System.currentTimeMillis();
+
+        // Карту байтов страниц больше не держим: после построения provider'а
+        // все нужные данные извлечены в Context-объекты. На реальном HBK это
+        // 50+ MB и сотни тысяч byte[] — освобождаем сразу.
+        int pagesParsed = pages.size();
+        pages.clear();
+
+        if (profile) {
+            System.out.println("[bsl-context.profile] extractHbkEntities=" + (tExtract - t0) + "ms"
+                + " readFileStorage=" + (tRead - tExtract) + "ms"
+                + " getTreeSyntaxHelper=" + (tTree - tRead) + "ms"
+                + " parseHTML=" + (tStorage - tTree) + "ms"
+                + " buildProvider(resolve)=" + (tProvider - tStorage) + "ms"
+                + " total=" + (tProvider - t0) + "ms"
+                + " pages=" + pagesParsed);
+        }
     }
 
-    // https://www.baeldung.com/java-compress-and-uncompress
-    private static void unpackFileStorage(Path out, byte[] data) throws IOException {
-        byte[] buffer = new byte[2048];
-
+    /**
+     * Читает FileStorage (ZIP) целиком в память: {@code путь → байты}.
+     * Без записи на диск. На реальном shcntx_ru.hbk (~24k файлов) ускоряет
+     * фазу с десятков секунд до пары секунд.
+     */
+    private static java.util.Map<String, byte[]> readFileStorageIntoMemory(byte[] data) throws IOException {
+        var pages = new java.util.HashMap<String, byte[]>(32 * 1024);
+        var buffer = new byte[64 * 1024];
         try (var stream = new ZipInputStream(new ByteArrayInputStream(data),
                 Charset.forName("windows-1251"))) {
-
-            ZipEntry zipEntry = stream.getNextEntry();
-            while (zipEntry != null) {
-                File newFile = createNewFile(out.toFile(), zipEntry);
-                if (zipEntry.isDirectory()) {
-                    if (!newFile.isDirectory() && !newFile.mkdirs()) {
-                        throw new IOException("Failed to create directory " + newFile);
-                    }
-                } else {
-                    // fix for Windows-created archives
-                    File parent = newFile.getParentFile();
-                    if (!parent.isDirectory() && !parent.mkdirs()) {
-                        throw new IOException("Failed to create directory " + parent);
-                    }
-
-                    // write file content
-                    FileOutputStream fos = new FileOutputStream(newFile);
+            ZipEntry entry = stream.getNextEntry();
+            while (entry != null) {
+                if (!entry.isDirectory()) {
+                    var out = new java.io.ByteArrayOutputStream(
+                        entry.getSize() > 0 ? (int) entry.getSize() : 1024);
                     int len;
                     while ((len = stream.read(buffer)) > 0) {
-                        fos.write(buffer, 0, len);
+                        out.write(buffer, 0, len);
                     }
-                    fos.close();
+                    pages.put(entry.getName(), out.toByteArray());
                 }
-
-                zipEntry = stream.getNextEntry();
+                entry = stream.getNextEntry();
             }
-
         }
+        return pages;
     }
 
     private static TableOfContent getTreeSyntaxHelper(byte[] data) throws IOException {
         var inflatePackBlock = getInflatePackBlock(data);
         var tmpFile = Files.createTempFile("packBlock", "");
-        var out = new FileOutputStream(tmpFile.toFile());
-        out.write(inflatePackBlock);
-        out.flush();
-        out.close();
-
+        Files.write(tmpFile, inflatePackBlock);
         return TableOfContent.readTableOfContent(tmpFile);
-    }
-    private static File createNewFile(File destinationDir, ZipEntry zipEntry) throws IOException {
-        File destFile = new File(destinationDir, zipEntry.getName());
-
-        String destDirPath = destinationDir.getCanonicalPath();
-        String destFilePath = destFile.getCanonicalPath();
-
-        if (!destFilePath.startsWith(destDirPath + File.separator)) {
-            throw new IOException("Entry is outside of the target dir: " + zipEntry.getName());
-        }
-
-        return destFile;
     }
 
     private static byte[] getInflatePackBlock(byte[] data) {
-        byte[] inflateData;
-
-        byte[] buffer = new byte[2048];
-
         try (var stream = new ZipInputStream(new ByteArrayInputStream(data))) {
             stream.getNextEntry();
-            inflateData = stream.readAllBytes();
+            return stream.readAllBytes();
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
-
-        return inflateData;
-    }
-
-    private static PlatformContextStorage createContextStorage(Path homePath, TableOfContent tree) {
-        HbkTreeParser parser = new HbkTreeParser(homePath);
-        var contexts = parser.parse(tree);
-
-        return new PlatformContextStorage(contexts);
     }
 
 
