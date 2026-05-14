@@ -4,13 +4,12 @@ import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkContainerExtractor;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkTreeParser;
+import com.github._1c_syntax.bsl.context.platform.hbk.PageSource;
 import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorage;
 import com.github.eightm.lib.TableOfContent;
 import lombok.Getter;
 
 import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -100,43 +99,18 @@ public class PlatformContextGrabber {
     }
 
     public void parse() throws IOException {
-        boolean profile = "true".equals(System.getProperty("bslContext.profile"))
-            || "true".equals(System.getenv("BSL_CONTEXT_PROFILE"));
-
-        long t0 = System.currentTimeMillis();
         var entities = HbkContainerExtractor.extractHbkEntities(pathToHbk);
-        long tExtract = System.currentTimeMillis();
-
         var pages = readFileStorageIntoMemory(entities.get("FileStorage"));
-        long tRead = System.currentTimeMillis();
-
         var tree = getTreeSyntaxHelper(entities.get("PackBlock"));
-        long tTree = System.currentTimeMillis();
 
-        var pageSource = new com.github._1c_syntax.bsl.context.platform.hbk.PageSource.InMemory(pages);
-        var parser = new HbkTreeParser(pageSource);
-        var contexts = parser.parse(tree);
-        var storage = new PlatformContextStorage(contexts);
-        long tStorage = System.currentTimeMillis();
-
-        provider = new PlatformContextProvider(storage);
-        long tProvider = System.currentTimeMillis();
+        var pageSource = new PageSource.InMemory(pages);
+        var contexts = new HbkTreeParser(pageSource).parse(tree);
+        provider = new PlatformContextProvider(new PlatformContextStorage(contexts));
 
         // Карту байтов страниц больше не держим: после построения provider'а
         // все нужные данные извлечены в Context-объекты. На реальном HBK это
         // 50+ MB и сотни тысяч byte[] — освобождаем сразу.
-        int pagesParsed = pages.size();
         pages.clear();
-
-        if (profile) {
-            System.out.println("[bsl-context.profile] extractHbkEntities=" + (tExtract - t0) + "ms"
-                + " readFileStorage=" + (tRead - tExtract) + "ms"
-                + " getTreeSyntaxHelper=" + (tTree - tRead) + "ms"
-                + " parseHTML=" + (tStorage - tTree) + "ms"
-                + " buildProvider(resolve)=" + (tProvider - tStorage) + "ms"
-                + " total=" + (tProvider - t0) + "ms"
-                + " pages=" + pagesParsed);
-        }
     }
 
     /**
