@@ -2,58 +2,68 @@
 
 Java-парсер синтакс-помощника (`.hbk`) платформы **1С:Предприятие 8**.
 Извлекает из файлов справки полную модель: типы, методы, свойства,
-события, конструкторы, перечисления, глобальный контекст — с
-метаданными (версии, deprecated, описания, примеры, ссылки «См. также»,
-значения по умолчанию для параметров).
+события, конструкторы, перечисления и глобальный контекст — с
+метаданными (версии появления и депрекации, описания, примеры, ссылки
+«См. также», значения по умолчанию для параметров, рекомендации по
+замене устаревших элементов).
 
-Используется как источник платформенных типов для проекта
-[`bsl-language-server`](https://github.com/1c-syntax/bsl-language-server)
+Предназначен для использования в инструментах статического анализа
+кода 1С — в первую очередь как источник платформенных типов для
+[`bsl-language-server`](https://github.com/1c-syntax/bsl-language-server).
 
 ---
 
 ## Что умеет
 
-- **Распаковка `.hbk`** — самостоятельно вытаскивает FileStorage из контейнера
-  (внутри это два вложенных ZIP) **в память**, без записи 24k файлов на диск.
-  Полный парсинг `shcntx_ru.hbk` 8.3.27 — около **1.7 секунды** на ноутбуке.
-- **Полная модель элементов** ([`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/)):
-  - `ContextType` — платформенный тип со свойствами/методами/событиями/конструкторами;
-  - `ContextEnum`/`ContextEnumValue` — системные перечисления;
-  - `ContextMethod`, `ContextProperty`, `ContextEvent`, `ContextConstructor`;
-  - `ContextMethodSignature` (с поддержкой нескольких вариантов синтаксиса)
-    и `ContextSignatureParameter`;
-  - `PlatformGlobalContext` — глобальный контекст (top-level методы, свойства,
-    события приложения/обычного приложения/сеанса/внешнего соединения).
-- **Метаданные:** `sinceVersion`, `deprecatedSinceVersion`, `description`,
-  `notes` («Замечание:»), `examples` («Пример:»), `seeAlso` («См. также:»),
+- **Распаковка `.hbk`** — самостоятельно вытаскивает FileStorage из
+  контейнера (внутри это два вложенных ZIP) **в память**, без записи
+  десятков тысяч HTML-файлов на диск. Полный парсинг русского
+  синтакс-помощника современной платформы занимает порядка секунды.
+- **Полная модель элементов**
+  ([`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/)):
+  - `ContextType` — платформенный тип со свойствами / методами /
+    событиями / конструкторами;
+  - `ContextEnum` / `ContextEnumValue` — системные перечисления и
+    их значения;
+  - `ContextMethod`, `ContextProperty`, `ContextEvent`,
+    `ContextConstructor`;
+  - `ContextMethodSignature` (с поддержкой нескольких вариантов
+    синтаксиса) и `ContextSignatureParameter`;
+  - `PlatformGlobalContext` — глобальный контекст (top-level методы,
+    свойства, события приложения / обычного приложения / сеанса /
+    внешнего соединения).
+- **Метаданные:** `sinceVersion`, `deprecatedSinceVersion`,
+  `recommendedReplacements`, `description`, `notes` («Замечание:»),
+  `examples` («Пример:»), `seeAlso` («См. также:»),
   `returnValueDescription`, `syntaxText` (сырая строка `Синтаксис:`),
-  `defaultValue` параметра, `accessMode` свойства, `availabilities` (по
-  видам клиента).
-- **Generic-типы** — типы вида `СправочникСсылка.<Имя справочника>` и свойства
-  вида `СправочникиМенеджер :: <Имя справочника>` (плейсхолдеры, конкретизация
-  приходит из конфигурации, парсится отдельным проектом
-  [`MDClasses`](https://github.com/1c-syntax/mdclasses)). Маркируются флагом
-  `isGeneric()` через эвристику в [`ContextNames`](src/main/java/com/github/_1c_syntax/bsl/context/api/ContextNames.java).
-  На 8.3.27.1786 эвристика находит **121** generic-тип и **243** generic-свойства,
-  ложных срабатываний нет.
-- **Двуязычие (ru + en).** TableOfContent даёт ru- и en-имена самих сущностей
-  (`Массив`/`Array`). Имена **вариантов сигнатур** и **параметров** живут
-  в HTML на одном языке — для них есть
+  `defaultValue` параметра, `accessMode` свойства, `availabilities`
+  (по видам клиента).
+- **Generic-типы.** Типы вида `СправочникСсылка.<Имя справочника>` и
+  свойства вида `СправочникиМенеджер :: <Имя справочника>` —
+  плейсхолдеры, конкретизация которых приходит из конфигурации и
+  парсится отдельным проектом
+  [`MDClasses`](https://github.com/1c-syntax/mdclasses). Все такие
+  элементы помечены флагом `isGeneric()` через эвристику в
+  [`ContextNames`](src/main/java/com/github/_1c_syntax/bsl/context/api/ContextNames.java).
+- **Двуязычие (ru + en).** Имена самих сущностей приходят сразу с
+  обоими языками. Имена **вариантов сигнатур** и **параметров** в
+  одной HBK живут только на одном языке — для них есть
   [`BilingualMerger`](src/main/java/com/github/_1c_syntax/bsl/context/platform/BilingualMerger.java),
-  который парсит обе HBK (`shcntx_ru.hbk` + `shcntx_root.hbk`) и подтягивает
-  en-алиасы в ru-провайдер.
-- **Автодетект установленной платформы** — [`PlatformFinder`](src/main/java/com/github/_1c_syntax/bsl/context/PlatformFinder.java)
-  на Windows/Linux/macOS, аналог OneScript-библиотеки `v8find`. Можно
-  запросить самую свежую версию (`findLatest()`) или конкретную
+  который парсит обе версии (`shcntx_ru.hbk` + `shcntx_root.hbk`) и
+  подтягивает en-алиасы в ru-провайдер.
+- **Автодетект установленной платформы** —
+  [`PlatformFinder`](src/main/java/com/github/_1c_syntax/bsl/context/PlatformFinder.java)
+  на Windows / Linux / macOS, аналог OneScript-библиотеки `v8find`.
+  Можно запросить самую свежую версию (`findLatest()`) или конкретную
   (`findVersion("8.3.27.1786")`).
 
 ---
 
 ## Быстрый старт
 
-### Получение зависимости
+### Подключение зависимости
 
-Через jitpack (после первого тэга):
+Через [jitpack](https://jitpack.io):
 
 ```kotlin
 repositories {
@@ -65,162 +75,140 @@ dependencies {
 }
 ```
 
-### Использование
+### Минимальный пример
 
 ```java
 import com.github._1c_syntax.bsl.context.PlatformContextGrabber;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.api.ContextType;
 
-// Вариант 1: автодетект самой свежей установленной платформы (Win/Linux/macOS).
-var grabber = PlatformContextGrabber.autoDetect(null); // null = временный каталог
+// Автодетект самой свежей установленной платформы.
+var grabber = PlatformContextGrabber.autoDetect(null);
 grabber.parse();
 ContextProvider ctx = grabber.getProvider();
 
-// Вариант 2: явный путь к каталогу bin платформы.
-var grabber2 = PlatformContextGrabber.fromPlatformBin(
-    Path.of("C:/Program Files/1cv8/8.3.27.1786/bin"), null);
-grabber2.parse();
+// Резолв по имени (ru или en, регистронезависимый).
+var array = ctx.getContextByName("Массив");  // или "Array"
 
-// Вариант 3: явный путь к .hbk-файлу.
-var grabber3 = PlatformContextGrabber.fromHbk(
-    Path.of("/path/to/shcntx_ru.hbk"), null);
-grabber3.parse();
-
-// Двуязычие — дополнительно подтягиваем en-имена из shcntx_root.hbk.
-grabber.parseBilingual(Path.of(".../bin/shcntx_root.hbk"));
-
-// Использование
+// Перебор типов.
 ctx.getContexts().stream()
     .filter(c -> c instanceof ContextType)
     .map(c -> (ContextType) c)
     .forEach(type -> {
-        System.out.println(type.name() + ", generic=" + type.isGeneric());
-        type.methods().forEach(m -> System.out.println("  - " + m.name()
-            + " since=" + m.sinceVersion()
-            + (m.deprecatedSinceVersion().isEmpty() ? "" : " DEPRECATED since " + m.deprecatedSinceVersion())));
+        System.out.println(type.name() + (type.isGeneric() ? " [generic]" : ""));
+        type.methods().forEach(m -> {
+            var since = m.sinceVersion();
+            var dep = m.deprecatedSinceVersion();
+            System.out.println("  " + m.name()
+                + (since.isEmpty() ? "" : " since=" + since)
+                + (dep.isEmpty() ? "" : " DEPRECATED since=" + dep
+                    + " → " + String.join(", ", m.recommendedReplacements())));
+        });
     });
 
-// Резолв по имени (ru или en, case-insensitive).
-ctx.getContextByName("Массив");      // Optional<Context>
-ctx.getContextByName("Array");       // тот же тип
-
-// Глобальный контекст
+// Глобальный контекст.
 ctx.getGlobalContext().methods().forEach(m -> System.out.println(m.name()));
 ```
+
+### Способы создания
+
+```java
+// 1. Автодетект — берёт самую свежую установку, найденную PlatformFinder.
+PlatformContextGrabber.autoDetect(workDir);
+
+// 2. По каталогу bin платформы.
+PlatformContextGrabber.fromPlatformBin(platformBin, workDir);
+
+// 3. По явному пути к .hbk.
+PlatformContextGrabber.fromHbk(hbkFile, workDir);
+
+// Двуязычие — после parse() подтянуть en-имена сигнатур и параметров.
+grabber.parseBilingual(enHbkFile);
+```
+
+`workDir` может быть `null` — тогда будет использован временный каталог.
 
 ---
 
 ## Архитектура
 
 ```
-HBK (.hbk file)
-  │
-  ├─ FileStorage (ZIP) ─────── readFileStorageIntoMemory() ─► Map<String, byte[]>
-  │                                                              │
-  └─ PackBlock (ZIP)   ──────  getTreeSyntaxHelper() ─►  TableOfContent
-                                                              │
-                          ┌───────────────────────────────────┘
-                          ▼
-                   HbkTreeParser
-                          │ обходит дерево, для каждой страницы дёргает
-                          ▼
-                    HtmlParser ── через PageSource ── открывает HTML
-                          │ извлекает структурные секции (Описание:, Параметры:,
-                          │ Возвращаемое значение:, Доступность:, Пример:, …)
-                          ▼
-              PlatformContext* объекты с rawTypes (имя как строка)
-                          │
-                          ▼
-              PlatformContextProvider
-                          │ один проход processRawTypes(Map<String,Context>):
-                          │ резолвит строковые ссылки в реальные Context-инстансы
-                          ▼
-                   ContextProvider (готов к использованию)
+HBK
+  ├─ FileStorage (ZIP)  ─►  in-memory Map<String, byte[]>
+  └─ PackBlock  (ZIP)   ─►  TableOfContent (дерево страниц)
+                                       │
+                                       ▼
+                               HbkTreeParser
+                                       │  для каждой страницы
+                                       ▼
+                                 HtmlParser ── через PageSource
+                                       │  извлекает структурные секции
+                                       ▼
+                          PlatformContext* объекты (rawTypes = строки)
+                                       │
+                                       ▼
+                          PlatformContextProvider
+                                       │  resolve: имена → ссылки на Context
+                                       ▼
+                          ContextProvider (готов к использованию)
 ```
 
 Ключевые компоненты:
 
 | Класс | Роль |
 |---|---|
-| `PlatformContextGrabber` | Точка входа. `fromHbk` / `fromPlatformBin` / `autoDetect` / `parseBilingual`. |
+| `PlatformContextGrabber` | Точка входа: `fromHbk` / `fromPlatformBin` / `autoDetect` / `parseBilingual`. |
 | `PlatformFinder` | Поиск установок платформы 1С на машине (v8find-аналог). |
 | `HbkContainerExtractor` | Разбирает внешний `.hbk`-контейнер на FileStorage + PackBlock. |
-| `HbkTreeParser` | Обходит `TableOfContent`-дерево HBK и для каждой страницы строит `PlatformContext*`-объект через `HtmlParser`. |
-| `HtmlParser` | Извлекает структурные секции HTML-страницы СП в `*Description`-DTO. |
+| `HbkTreeParser` | Обходит дерево HBK и для каждой страницы строит `PlatformContext*`-объект через `HtmlParser`. |
+| `HtmlParser` | Извлекает структурные секции HTML-страницы в `*Description`-DTO. |
 | `PageSource` | Абстракция «открыть страницу по пути». Реализации: `InMemory` (production) и `FileSystem` (тесты на распакованных фикстурах). |
-| `PlatformContextProvider` | Хранит готовые контексты, резолвит сырые имена типов в ссылки. |
-| `PlatformContextStorage` | Внутренний индекс по ru/en-имени, отдельное место для `PlatformGlobalContext`. |
+| `PlatformContextProvider` | Хранит готовые контексты и резолвит строковые ссылки в объекты `Context`. |
 | `BilingualMerger` | Подтягивает en-алиасы из en-провайдера в ru-провайдер. |
 | `ContextNames` | Утилита: эвристика `isGeneric(name)`. |
 
-API-интерфейсы в [`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/) не зависят от реализаций и не тащат сторонних библиотек — потребитель (BSL LS, MDClasses, кто угодно) пишет адаптер к своей модели прямо через них.
+API-интерфейсы в
+[`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/) не
+зависят от реализаций и не тащат сторонних библиотек — потребитель
+пишет адаптер к своей модели прямо через них.
 
 ---
 
 ## Производительность
 
-Профиль полного парсинга `shcntx_ru.hbk` 8.3.27.1786 (Windows, Java 21):
+Узкое место в наивной реализации — запись десятков тысяч HTML-файлов
+на диск (особенно на NTFS). `bsl-context` обходит её через
+`PageSource.InMemory`: FileStorage читается в `Map<String, byte[]>`
+и парсится прямо из памяти, без затрагивания файловой системы.
 
-```
-extractHbkEntities   =   31 ms
-readFileStorage      =  348 ms
-getTreeSyntaxHelper  =  646 ms
-parseHTML            =  682 ms
-buildProvider        =   44 ms
-total                = 1751 ms  ← было 60256 ms до in-memory PageSource
-pages                = 52048
-```
-
-Главная оптимизация — `PageSource.InMemory`: HBK FileStorage читается прямо
-в `Map<String, byte[]>` и парсится из памяти без записи на диск. На Windows
-NTFS-метаданные на каждую из ~24 тысяч HTML-файлов добавляли 50+ секунд.
-
-После построения `ContextProvider` карта страниц очищается
-(`pages.clear()`), чтобы освободить heap.
+Полный парсинг `shcntx_ru.hbk` современной платформы занимает порядка
+1–2 секунд на ноутбуке среднего класса. После завершения парсинга
+in-memory карта страниц очищается, чтобы освободить heap.
 
 ---
 
 ## Сборка
 
-Требуется Java 21 (toolchain в `build.gradle.kts` это форсирует).
+Требуется **Java 21+** (включена через Gradle toolchain).
 
 ```bash
-./gradlew build              # сборка + тесты
-./gradlew test               # юнит-тесты (быстрые)
+./gradlew build               # сборка + тесты
 ./gradlew publishToMavenLocal # положить артефакт в ~/.m2
 ```
 
 ### Smoke-тест против реальной платформы
 
-Не входит в обычный CI-прогон — требует установленной 1С.
+В обычный прогон не включён — требует установленной 1С. Запускать
+вручную, выставив env-флаг:
 
 ```bash
 BSL_CONTEXT_REAL_HBK=true ./gradlew test --tests "*RealHbkSmokeTest"
 ```
 
-Тест автоматически найдёт самую свежую установку через `PlatformFinder`,
-распарсит её `shcntx_ru.hbk` и `shcntx_root.hbk`, проверит наличие
-ключевых типов, generic-эвристику и двуязычие.
-
-### Дамп generic-типов
-
-Утилита для быстрого аудита эвристики `isGeneric` на реальном HBK
-живёт в throwaway-тестах (запускается вручную, отключена по умолчанию).
-См. `DumpGenericsMain` пример в истории `tmp/` или собрать на основе
-`PlatformContextGrabber.autoDetect()`.
-
----
-
-## Тестирование
-
-- **Юнит-тесты** работают на обезличенных HTML-фикстурах
-  ([`src/test/resources/fixtures/`](src/test/resources/fixtures/)),
-  повторяющих реальную HBK-разметку (классы `V8SH_*`, экранирование
-  `&lt;…&gt;`, секция `<p class="V8SH_chapter">…</p>`). Имена в фикстурах
-  выдуманные — `Виджет / Widget` и т.п., чтобы не класть в репозиторий
-  контент платформы (см. лицензионные ограничения).
-- Покрытие: ~40 тестов, проходят за <1 секунды.
+Тест автоматически находит свежую установку через `PlatformFinder`,
+парсит её `shcntx_ru.hbk` и `shcntx_root.hbk` и проверяет:
+наличие ключевых типов, срабатывание generic-эвристики, корректность
+двуязычного мерджа.
 
 ---
 
@@ -228,9 +216,9 @@ BSL_CONTEXT_REAL_HBK=true ./gradlew test --tests "*RealHbkSmokeTest"
 
 ```
 ContextProvider
-├─ getContexts(): List<Context>      // типы + перечисления (без global)
-├─ getContextByName(name): Optional<Context>  // ru или en, case-insensitive
-└─ getGlobalContext(): PlatformGlobalContext  // top-level
+├─ getContexts(): List<Context>                  // типы и перечисления
+├─ getContextByName(name): Optional<Context>     // ru или en, case-insensitive
+└─ getGlobalContext(): PlatformGlobalContext     // top-level
 
 Context
 ├─ name(): ContextName(ru, en)
@@ -246,30 +234,31 @@ ContextType extends Context
 ContextMethod
 ├─ name(): ContextName
 ├─ description(), notes(), returnValueDescription(): String
-├─ examples(), seeAlso(): List<String>
+├─ examples(), seeAlso(), recommendedReplacements(): List<String>
 ├─ availabilities(): List<Availability>
 ├─ signatures(): List<ContextMethodSignature>
-├─ returnValues(): List<Context>         // разрезолвленные типы возврата
+├─ returnValues(): List<Context>
 ├─ sinceVersion(), deprecatedSinceVersion(): String
 └─ isGeneric(): boolean
 
 ContextMethodSignature
-├─ name(): ContextName                   // имя варианта («По индексу» / …)
+├─ name(): ContextName                           // имя варианта
 ├─ parameters(): List<ContextSignatureParameter>
 ├─ description(): String
-└─ syntaxText(): String                  // «Получить(<Индекс>)»
+└─ syntaxText(): String                          // сырая строка «Получить(<Индекс>)»
 
 ContextSignatureParameter
 ├─ name(): ContextName
 ├─ isRequired(): boolean
-├─ types(): List<Context>                // разрезолвленные типы параметра
+├─ types(): List<Context>
 ├─ description(): String
-└─ defaultValue(): String                // извлекается из описания
+└─ defaultValue(): String
 
 ContextProperty
 ├─ accessMode(): AccessMode { READ, READ_WRITE }
 ├─ types(): List<Context>
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
+├─ recommendedReplacements(): List<String>
 ├─ availabilities(): List<Availability>
 └─ isGeneric(): boolean
 
@@ -279,11 +268,15 @@ ContextEnum extends Context
 ContextEnumValue
 ├─ name(): ContextName
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
+└─ recommendedReplacements(): List<String>
 ```
 
 ---
 
 ## Лицензия
 
-LGPL-3.0-or-later. Контент `.hbk`-файлов платформы 1С защищён собственной
-лицензией 1С и в репозиторий не включён.
+LGPL-3.0-or-later.
+
+Содержимое `.hbk`-файлов платформы 1С — собственность фирмы «1С» и
+в репозиторий не включено. Тесты используют **обезличенные**
+HTML-фикстуры, повторяющие разметку синтакс-помощника.

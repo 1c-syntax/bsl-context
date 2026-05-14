@@ -16,6 +16,8 @@ public class PlatformContextEvent implements ContextEvent{
   private final String sinceVersion = "";
   @lombok.Builder.Default
   private final String deprecatedSinceVersion = "";
+  @lombok.Builder.Default
+  private final List<String> recommendedReplacements = List.of();
 
   @Override
   public ContextName name() {
@@ -45,6 +47,11 @@ public class PlatformContextEvent implements ContextEvent{
   @Override
   public String deprecatedSinceVersion() {
     return deprecatedSinceVersion;
+  }
+
+  @Override
+  public List<String> recommendedReplacements() {
+    return List.copyOf(recommendedReplacements);
   }
 
   @Override

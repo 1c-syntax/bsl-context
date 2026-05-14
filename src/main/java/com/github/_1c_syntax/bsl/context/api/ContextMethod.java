@@ -71,16 +71,16 @@ public interface ContextMethod {
      * Примеры использования метода (содержимое блоков «Пример:» в синтакс-помощнике)
      * как plaintext, без HTML-разметки. Пустой список, если примеров нет.
      */
-    default java.util.List<String> examples() {
-        return java.util.List.of();
+    default List<String> examples() {
+        return List.of();
     }
 
     /**
      * Список имён связанных типов/методов из секции «См. также:».
      * Пустой список, если ссылок нет.
      */
-    default java.util.List<String> seeAlso() {
-        return java.util.List.of();
+    default List<String> seeAlso() {
+        return List.of();
     }
 
     /**
@@ -89,6 +89,16 @@ public interface ContextMethod {
      */
     default String notes() {
         return "";
+    }
+
+    /**
+     * Имена, рекомендованные в качестве замены устаревшего метода
+     * (содержимое блока {@code <div class="__DEPRECATED_SHOW_STYLE__">} →
+     * «Рекомендуется использовать:» + список ссылок). Пустой, если метод
+     * не deprecated или замена не указана.
+     */
+    default List<String> recommendedReplacements() {
+        return List.of();
     }
 
 }

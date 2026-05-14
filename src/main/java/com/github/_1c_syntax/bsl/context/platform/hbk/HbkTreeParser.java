@@ -194,7 +194,8 @@ public class HbkTreeParser {
                     new ContextName(it.title().ru(), it.title().en()),
                     description.getDescription(),
                     description.getSinceVersion(),
-                    description.getDeprecatedSinceVersion()
+                    description.getDeprecatedSinceVersion(),
+                    List.copyOf(description.getRecommendedReplacements())
                 );
             })
             .collect(Collectors.toList());
@@ -216,9 +217,9 @@ public class HbkTreeParser {
                     .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
                     .returnValueDescription(methodDescription.getReturnValueDescription())
                     .notes(methodDescription.getNotes())
-                    .notes(methodDescription.getNotes())
                     .examples(List.copyOf(methodDescription.getExamples()))
                     .seeAlso(List.copyOf(methodDescription.getSeeAlso()))
+                    .recommendedReplacements(List.copyOf(methodDescription.getRecommendedReplacements()))
                     .build();
 
             })
@@ -245,6 +246,7 @@ public class HbkTreeParser {
             .sinceVersion(constructorDescription.getSinceVersion())
             .deprecatedSinceVersion(constructorDescription.getDeprecatedSinceVersion())
             .syntaxText(constructorDescription.getSyntaxText())
+            .recommendedReplacements(List.copyOf(constructorDescription.getRecommendedReplacements()))
             .build();
     }
 
@@ -261,6 +263,7 @@ public class HbkTreeParser {
                     .signatures(buildSignatures(methodDescription.getSignatures()))
                     .sinceVersion(methodDescription.getSinceVersion())
                     .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
+                    .recommendedReplacements(List.copyOf(methodDescription.getRecommendedReplacements()))
                     .build();
 
             })
@@ -322,6 +325,7 @@ public class HbkTreeParser {
                     .availabilities(mapAvailabilities(propertyDescription.getAvailabilities()))
                     .sinceVersion(propertyDescription.getSinceVersion())
                     .deprecatedSinceVersion(propertyDescription.getDeprecatedSinceVersion())
+                    .recommendedReplacements(List.copyOf(propertyDescription.getRecommendedReplacements()))
                     .build();
 
             })

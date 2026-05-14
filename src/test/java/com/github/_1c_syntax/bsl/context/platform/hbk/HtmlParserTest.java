@@ -154,6 +154,10 @@ class HtmlParserTest {
         // Парсер должен различать их по префиксу и заполнять разные поля.
         assertThat(method.getSinceVersion()).isEqualTo("8.3.11");
         assertThat(method.getDeprecatedSinceVersion()).isEqualTo("8.3.15");
+        // «Рекомендуется использовать:» — содержимое блока __DEPRECATED_SHOW_STYLE__
+        // должно собирать имена из вложенных <a>-ссылок.
+        assertThat(method.getRecommendedReplacements())
+            .containsExactly("НовыйМетод", "ЕщёОдинМетод");
     }
 
     // --- enum value ---

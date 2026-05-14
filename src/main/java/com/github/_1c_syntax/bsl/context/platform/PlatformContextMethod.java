@@ -29,6 +29,8 @@ public class PlatformContextMethod implements ContextMethod {
     private final List<String> examples = List.of();
     @lombok.Builder.Default
     private final List<String> seeAlso = List.of();
+    @lombok.Builder.Default
+    private final List<String> recommendedReplacements = List.of();
 
     private final List<String> rawReturnValues;
 
@@ -90,6 +92,11 @@ public class PlatformContextMethod implements ContextMethod {
     @Override
     public String notes() {
         return notes;
+    }
+
+    @Override
+    public List<String> recommendedReplacements() {
+        return List.copyOf(recommendedReplacements);
     }
 
     @Override

@@ -55,4 +55,11 @@ public interface ContextProperty {
         return ContextNames.isGeneric(name());
     }
 
+    /**
+     * Имена, рекомендованные в качестве замены устаревшего свойства.
+     */
+    default List<String> recommendedReplacements() {
+        return List.of();
+    }
+
 }

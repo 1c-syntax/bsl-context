@@ -48,4 +48,11 @@ public interface ContextEvent {
     return ContextNames.isGeneric(name());
   }
 
+  /**
+   * Имена, рекомендованные в качестве замены устаревшего события.
+   */
+  default List<String> recommendedReplacements() {
+    return List.of();
+  }
+
 }

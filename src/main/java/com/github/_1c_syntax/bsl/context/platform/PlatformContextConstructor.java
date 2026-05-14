@@ -19,6 +19,8 @@ public class PlatformContextConstructor implements ContextConstructor {
     private final String deprecatedSinceVersion = "";
     @lombok.Builder.Default
     private final String syntaxText = "";
+    @lombok.Builder.Default
+    private final List<String> recommendedReplacements = List.of();
 
     @Override
     public ContextName name() {
@@ -48,6 +50,11 @@ public class PlatformContextConstructor implements ContextConstructor {
     @Override
     public String syntaxText() {
         return syntaxText;
+    }
+
+    @Override
+    public List<String> recommendedReplacements() {
+        return List.copyOf(recommendedReplacements);
     }
 
     protected void processRawTypes(java.util.Map<String, Context> typeIndex) {

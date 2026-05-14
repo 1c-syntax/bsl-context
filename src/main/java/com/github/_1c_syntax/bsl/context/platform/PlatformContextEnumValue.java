@@ -4,6 +4,8 @@ import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import lombok.Builder;
 
+import java.util.List;
+
 /**
  * Платформенное значение перечисления.
  */
@@ -16,19 +18,29 @@ public class PlatformContextEnumValue implements ContextEnumValue {
     private final String sinceVersion = "";
     @lombok.Builder.Default
     private final String deprecatedSinceVersion = "";
+    @lombok.Builder.Default
+    private final List<String> recommendedReplacements = List.of();
 
     /**
      * Конструктор для обратной совместимости (имя без описания и версионных меток).
      */
     public PlatformContextEnumValue(ContextName name) {
-        this(name, "", "", "");
+        this(name, "", "", "", List.of());
     }
 
-    public PlatformContextEnumValue(ContextName name, String description, String sinceVersion, String deprecatedSinceVersion) {
+    public PlatformContextEnumValue(ContextName name, String description,
+                                    String sinceVersion, String deprecatedSinceVersion) {
+        this(name, description, sinceVersion, deprecatedSinceVersion, List.of());
+    }
+
+    public PlatformContextEnumValue(ContextName name, String description,
+                                    String sinceVersion, String deprecatedSinceVersion,
+                                    List<String> recommendedReplacements) {
         this.name = name;
         this.description = description;
         this.sinceVersion = sinceVersion;
         this.deprecatedSinceVersion = deprecatedSinceVersion;
+        this.recommendedReplacements = recommendedReplacements;
     }
 
     @Override
@@ -49,6 +61,11 @@ public class PlatformContextEnumValue implements ContextEnumValue {
     @Override
     public String deprecatedSinceVersion() {
         return deprecatedSinceVersion;
+    }
+
+    @Override
+    public List<String> recommendedReplacements() {
+        return List.copyOf(recommendedReplacements);
     }
 
     @Override

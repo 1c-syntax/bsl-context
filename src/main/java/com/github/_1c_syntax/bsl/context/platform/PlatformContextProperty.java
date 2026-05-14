@@ -20,6 +20,8 @@ public class PlatformContextProperty implements ContextProperty {
     private final String sinceVersion = "";
     @lombok.Builder.Default
     private final String deprecatedSinceVersion = "";
+    @lombok.Builder.Default
+    private final List<String> recommendedReplacements = List.of();
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
 
@@ -56,6 +58,11 @@ public class PlatformContextProperty implements ContextProperty {
     @Override
     public String deprecatedSinceVersion() {
         return deprecatedSinceVersion;
+    }
+
+    @Override
+    public List<String> recommendedReplacements() {
+        return List.copyOf(recommendedReplacements);
     }
 
     @Override

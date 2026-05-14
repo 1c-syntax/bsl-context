@@ -1,5 +1,7 @@
 package com.github._1c_syntax.bsl.context.api;
 
+import java.util.List;
+
 /**
  * Значение перечисления (один из членов {@link ContextEnum}).
  * Например, для {@code ВидДвиженияНакопления} это {@code Приход} / {@code Расход}.
@@ -30,5 +32,12 @@ public interface ContextEnumValue {
      */
     default String deprecatedSinceVersion() {
         return "";
+    }
+
+    /**
+     * Имена, рекомендованные в качестве замены устаревшего значения.
+     */
+    default List<String> recommendedReplacements() {
+        return List.of();
     }
 }

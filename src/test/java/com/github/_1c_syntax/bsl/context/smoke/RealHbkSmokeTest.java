@@ -89,6 +89,25 @@ class RealHbkSmokeTest {
             .filter(v -> !v.description().isBlank())
             .count();
         assertThat(enumValuesWithDescription).isGreaterThan(0);
+
+        // Связь "свойство-плейсхолдер ↔ generic-тип": на namespace-типе
+        // СправочникиМенеджер должно быть generic-свойство «<Имя справочника>»,
+        // тип которого должен быть разрезолвлен в реальный generic-тип
+        // СправочникМенеджер.<Имя справочника>.
+        var catalogsManager = provider.getContextByName("СправочникиМенеджер").orElse(null);
+        assertThat(catalogsManager).isInstanceOf(ContextType.class);
+        var managerType = (ContextType) catalogsManager;
+        var genericProp = managerType.properties().stream()
+            .filter(ContextProperty::isGeneric)
+            .findFirst()
+            .orElse(null);
+        assertThat(genericProp)
+            .as("СправочникиМенеджер должен иметь generic-свойство <Имя справочника>")
+            .isNotNull();
+        assertThat(genericProp.types())
+            .as("тип generic-свойства <Имя справочника> должен резолвиться в generic-тип СправочникМенеджер.<…>")
+            .isNotEmpty()
+            .anyMatch(t -> t.isGeneric() && t.name().getName().startsWith("СправочникМенеджер."));
     }
 
 

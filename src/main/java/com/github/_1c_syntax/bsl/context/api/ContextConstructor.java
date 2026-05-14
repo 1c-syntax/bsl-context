@@ -38,4 +38,11 @@ public interface ContextConstructor {
     default String syntaxText() {
         return "";
     }
+
+    /**
+     * Имена, рекомендованные в качестве замены устаревшего конструктора.
+     */
+    default List<String> recommendedReplacements() {
+        return List.of();
+    }
 }

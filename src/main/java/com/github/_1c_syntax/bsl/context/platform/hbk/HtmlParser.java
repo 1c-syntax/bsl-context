@@ -143,6 +143,29 @@ public class HtmlParser {
   }
 
   /**
+   * Извлекает имена «Рекомендуется использовать:» — обёрнутая в
+   * {@code <div class="__DEPRECATED_SHOW_STYLE__"><ul>…<li><a>Имя</a></li>…}
+   * подсказка, что использовать вместо устаревшего элемента. Возвращает
+   * пустой список, если блока нет либо в нём нет {@code <a>}-ссылок.
+   */
+  private static List<String> findRecommendedReplacements(org.jsoup.nodes.Document document) {
+    var blocks = document.select("div.__DEPRECATED_SHOW_STYLE__");
+    if (blocks.isEmpty()) {
+      return Collections.emptyList();
+    }
+    var result = new ArrayList<String>();
+    for (var block : blocks) {
+      for (var anchor : block.select("a")) {
+        var text = anchor.text().trim();
+        if (!text.isBlank()) {
+          result.add(text);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Разбирает корневую страницу глобального контекста ({@code Global context.html}).
    * Её основное содержимое — навигационные списки чаптеров «Свойства:»,
    * «Методы:», «События приложения:» и т.д., которые мы вытаскиваем из
@@ -177,6 +200,7 @@ public class HtmlParser {
   protected EnumValueDescription parseEnumValuePage(Page page) {
     final var document = pageSource.parse(page.htmlPath());
     var result = new EnumValueDescription();
+    result.recommendedReplacements = findRecommendedReplacements(document);
 
     var descriptionSection = false;
 
@@ -213,6 +237,7 @@ public class HtmlParser {
     final var document = pageSource.parse(page.htmlPath());
 
     var result = new PropertyDescription();
+    result.recommendedReplacements = findRecommendedReplacements(document);
 
     var accessModeSection = false;
     var descriptionSection = false;
@@ -328,6 +353,7 @@ public class HtmlParser {
 
     final var document = pageSource.parse(page.htmlPath());
     var result = new MethodDescription();
+    result.recommendedReplacements = findRecommendedReplacements(document);
 
     var hasOverloads = document.text().contains("Вариант синтаксиса:");
 
@@ -631,6 +657,7 @@ public class HtmlParser {
     final var document = pageSource.parse(page.htmlPath());
 
     var result = new ConstructorDescription();
+    result.recommendedReplacements = findRecommendedReplacements(document);
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
 
     var isDescription = false;
@@ -762,6 +789,7 @@ public class HtmlParser {
     private List<String> availabilities = Collections.emptyList();
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
+    private List<String> recommendedReplacements = Collections.emptyList();
 
     protected PropertyDescription() {
     }
@@ -781,6 +809,7 @@ public class HtmlParser {
     private final List<String> seeAlso = new ArrayList<>();
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
+    private List<String> recommendedReplacements = Collections.emptyList();
 
     private MethodDescription() {
     }
@@ -830,6 +859,7 @@ public class HtmlParser {
     private String syntaxText = "";
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
+    private List<String> recommendedReplacements = Collections.emptyList();
 
     private ConstructorDescription() {
     }
@@ -840,6 +870,7 @@ public class HtmlParser {
     private String description = "";
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
+    private List<String> recommendedReplacements = Collections.emptyList();
 
     private EnumValueDescription() {
     }
