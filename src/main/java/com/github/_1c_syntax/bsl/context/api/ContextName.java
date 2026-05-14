@@ -3,7 +3,12 @@ package com.github._1c_syntax.bsl.context.api;
 import java.util.Objects;
 
 /**
- * Имя любой части контекста.
+ * Двухъязычное имя элемента синтакс-помощника: русское и английское.
+ * Сравнение и хэш регистронезависимы по обеим частям.
+ *
+ * <p>Пример: {@code new ContextName("Массив", "Array")}.
+ *
+ * <p>Если одно из имён неизвестно, передаётся пустая строка.
  */
 public final class ContextName {
     /**
@@ -11,7 +16,7 @@ public final class ContextName {
      */
     private final String name;
     /**
-     * Альтернативное имя, как правильно на английском.
+     * Альтернативное имя на английском.
      */
     private final String alias;
 
@@ -20,10 +25,16 @@ public final class ContextName {
         this.alias = alias;
     }
 
+    /**
+     * @return русское имя
+     */
     public String getName() {
         return name;
     }
 
+    /**
+     * @return английское имя (alias)
+     */
     public String getAlias() {
         return alias;
     }

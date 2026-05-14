@@ -14,6 +14,8 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   private final boolean isRequired;
   private final List<Context> types = new ArrayList<>();
   private final String description;
+  @lombok.Builder.Default
+  private final String defaultValue = "";
 
   private final List<String> rawTypes;
 
@@ -35,6 +37,11 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   @Override
   public String description() {
     return description;
+  }
+
+  @Override
+  public String defaultValue() {
+    return defaultValue;
   }
 
   protected void processRawTypes(List<Context> contexts) {

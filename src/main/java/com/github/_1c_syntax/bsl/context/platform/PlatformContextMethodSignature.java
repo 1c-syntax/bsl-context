@@ -14,6 +14,8 @@ public class PlatformContextMethodSignature implements ContextMethodSignature {
   private final ContextName name;
   private final List<ContextSignatureParameter> parameters;
   private final String description;
+  @lombok.Builder.Default
+  private final String syntaxText = "";
 
 
   @Override
@@ -29,6 +31,11 @@ public class PlatformContextMethodSignature implements ContextMethodSignature {
   @Override
   public String description() {
     return description;
+  }
+
+  @Override
+  public String syntaxText() {
+    return syntaxText;
   }
 
   protected void processRawTypes(List<Context> contexts) {

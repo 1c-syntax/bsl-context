@@ -13,6 +13,12 @@ public class PlatformContextConstructor implements ContextConstructor {
     private final ContextName name;
     private final List<ContextSignatureParameter> parameters;
     private final String description;
+    @lombok.Builder.Default
+    private final String sinceVersion = "";
+    @lombok.Builder.Default
+    private final String deprecatedSinceVersion = "";
+    @lombok.Builder.Default
+    private final String syntaxText = "";
 
     @Override
     public ContextName name() {
@@ -27,6 +33,21 @@ public class PlatformContextConstructor implements ContextConstructor {
     @Override
     public String description() {
         return description;
+    }
+
+    @Override
+    public String sinceVersion() {
+        return sinceVersion;
+    }
+
+    @Override
+    public String deprecatedSinceVersion() {
+        return deprecatedSinceVersion;
+    }
+
+    @Override
+    public String syntaxText() {
+        return syntaxText;
     }
 
     protected void processRawTypes(List<Context> contexts) {

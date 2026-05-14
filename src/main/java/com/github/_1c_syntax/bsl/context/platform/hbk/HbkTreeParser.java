@@ -155,7 +155,15 @@ public class HbkTreeParser {
     private List<ContextEnumValue> getEnumValuesFromPage(Page page) {
         return page.children().stream()
             .filter(it -> it.htmlPath().contains("/properties/"))
-            .map(it -> new PlatformContextEnumValue(new ContextName(it.title().ru(), it.title().en())))
+            .map(it -> {
+                var description = htmlParser.parseEnumValuePage(it);
+                return new PlatformContextEnumValue(
+                    new ContextName(it.title().ru(), it.title().en()),
+                    description.getDescription(),
+                    description.getSinceVersion(),
+                    description.getDeprecatedSinceVersion()
+                );
+            })
             .collect(Collectors.toList());
     }
 
@@ -165,42 +173,17 @@ public class HbkTreeParser {
 
                 var methodDescription = htmlParser.parseMethodPage(it);
 
-                var availabilities = methodDescription.getAvailabilities()
-                    .stream()
-                    .map(Availability::findByName)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList();
-
-                var signatures = methodDescription.getSignatures()
-                    .stream()
-                    .map(methodSignatureDescription ->
-                        PlatformContextMethodSignature.builder()
-                            .description(methodSignatureDescription.getDescription())
-                            .name(new ContextName(methodSignatureDescription.getName(), ""))
-                            .parameters(
-                                methodSignatureDescription.getParameters()
-                                    .stream()
-                                    .map(methodSignatureParameterDescription ->
-                                        PlatformContextSignatureParameter.builder()
-                                            .description(methodSignatureParameterDescription.getDescription())
-                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
-                                            .isRequired(methodSignatureParameterDescription.isRequired())
-                                            .rawTypes(methodSignatureParameterDescription.getTypes())
-                                            .build())
-                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
-                                    .toList()
-                            )
-                            .build())
-                    .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
-                    .toList();
-
                 return PlatformContextMethod.builder()
                     .name(new ContextName(it.title().ru(), it.title().en()))
                     .description(methodDescription.getDescription())
-                    .availabilities(availabilities)
+                    .availabilities(mapAvailabilities(methodDescription.getAvailabilities()))
                     .rawReturnValues(methodDescription.getReturnValues())
-                    .signatures(signatures)
+                    .signatures(buildSignatures(methodDescription.getSignatures()))
+                    .sinceVersion(methodDescription.getSinceVersion())
+                    .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
+                    .returnValueDescription(methodDescription.getReturnValueDescription())
+                    .examples(List.copyOf(methodDescription.getExamples()))
+                    .seeAlso(List.copyOf(methodDescription.getSeeAlso()))
                     .build();
 
             })
@@ -221,15 +204,12 @@ public class HbkTreeParser {
             .name(new ContextName(page.title().ru(), page.title().en()))
             .description(constructorDescription.getDescription())
             .parameters(constructorDescription.getParameters().stream()
-                .map(methodSignatureParameterDescription ->
-                    PlatformContextSignatureParameter.builder()
-                        .description(methodSignatureParameterDescription.getDescription())
-                        .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
-                        .isRequired(methodSignatureParameterDescription.isRequired())
-                        .rawTypes(methodSignatureParameterDescription.getTypes())
-                        .build())
-                .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
+                .map(HbkTreeParser::buildParameter)
+                .map(p -> (ContextSignatureParameter) p)
                 .toList())
+            .sinceVersion(constructorDescription.getSinceVersion())
+            .deprecatedSinceVersion(constructorDescription.getDeprecatedSinceVersion())
+            .syntaxText(constructorDescription.getSyntaxText())
             .build();
     }
 
@@ -239,73 +219,74 @@ public class HbkTreeParser {
 
                 var methodDescription = htmlParser.parseMethodPage(it);
 
-                var availabilities = methodDescription.getAvailabilities()
-                    .stream()
-                    .map(Availability::findByName)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList();
-
-                var signatures = methodDescription.getSignatures()
-                    .stream()
-                    .map(methodSignatureDescription ->
-                        PlatformContextMethodSignature.builder()
-                            .description(methodSignatureDescription.getDescription())
-                            .name(new ContextName(methodSignatureDescription.getName(), ""))
-                            .parameters(
-                                methodSignatureDescription.getParameters()
-                                    .stream()
-                                    .map(methodSignatureParameterDescription ->
-                                        PlatformContextSignatureParameter.builder()
-                                            .description(methodSignatureParameterDescription.getDescription())
-                                            .name(new ContextName(methodSignatureParameterDescription.getName(), ""))
-                                            .isRequired(methodSignatureParameterDescription.isRequired())
-                                            .rawTypes(methodSignatureParameterDescription.getTypes())
-                                            .build())
-                                    .map(platformContextSignatureParameter -> (ContextSignatureParameter) platformContextSignatureParameter)
-                                    .toList()
-                            )
-                            .build())
-                    .map(platformContextMethodSignature -> (ContextMethodSignature) platformContextMethodSignature)
-                    .toList();
-
                 return PlatformContextEvent.builder()
                     .name(new ContextName(it.title().ru(), it.title().en()))
                     .description(methodDescription.getDescription())
-                    .availabilities(availabilities)
-                    .signatures(signatures)
+                    .availabilities(mapAvailabilities(methodDescription.getAvailabilities()))
+                    .signatures(buildSignatures(methodDescription.getSignatures()))
+                    .sinceVersion(methodDescription.getSinceVersion())
+                    .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
                     .build();
 
             })
             .collect(Collectors.toList());
     }
 
+    private static List<Availability> mapAvailabilities(List<String> raw) {
+        return raw.stream()
+            .map(Availability::findByName)
+            .filter(Optional::isPresent)
+            .map(Optional::get)
+            .toList();
+    }
+
+    private static List<ContextMethodSignature> buildSignatures(
+        List<HtmlParser.MethodSignatureDescription> raw) {
+        return raw.stream()
+            .map(sigDesc -> PlatformContextMethodSignature.builder()
+                .description(sigDesc.getDescription())
+                .name(new ContextName(sigDesc.getName(), ""))
+                .parameters(sigDesc.getParameters().stream()
+                    .map(HbkTreeParser::buildParameter)
+                    .map(p -> (ContextSignatureParameter) p)
+                    .toList())
+                .syntaxText(sigDesc.getSyntaxText())
+                .build())
+            .map(s -> (ContextMethodSignature) s)
+            .toList();
+    }
+
+    private static PlatformContextSignatureParameter buildParameter(
+        HtmlParser.MethodSignatureParameterDescription paramDesc) {
+        return PlatformContextSignatureParameter.builder()
+            .description(paramDesc.getDescription())
+            .name(new ContextName(paramDesc.getName(), ""))
+            .isRequired(paramDesc.isRequired())
+            .rawTypes(paramDesc.getTypes())
+            .defaultValue(paramDesc.getDefaultValue())
+            .build();
+    }
+
     private List<ContextProperty> getPropertiesFromPage(Page page) {
+        // Свойства с именем, начинающимся с «<» (например, «<Имя справочника>»),
+        // — generic-плейсхолдеры, заполняемые из конфигурации. Не отбрасываем,
+        // а помечаем флагом isGeneric() (см. ContextProperty / ContextNames).
         return page.children().stream()
-            .filter(it -> it.htmlPath().contains("/properties/")) // TODO проверить на обязательность
-            .filter(it -> {
-                // TODO если имя начинается с < , то это расширение типа из конфигурации.
-                return !it.title().ru().startsWith("<");
-            })
+            .filter(it -> it.htmlPath().contains("/properties/"))
             .map(it -> {
 
                 var propertyDescription = htmlParser.parsePropertyPage(it);
 
                 var accessMode = AccessMode.findByName(propertyDescription.getAccessMode());
-                var description = propertyDescription.getDescription();
-                List<Availability> availabilities = propertyDescription.getAvailabilities()
-                    .stream()
-                    .map(Availability::findByName)
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList();
 
                 return PlatformContextProperty.builder()
                     .name(new ContextName(it.title().ru(), it.title().en()))
                     .accessMode(accessMode.orElse(AccessMode.READ_WRITE))
                     .rawTypes(propertyDescription.getTypes())
-                    .description(description)
-                    .availabilities(availabilities)
+                    .description(propertyDescription.getDescription())
+                    .availabilities(mapAvailabilities(propertyDescription.getAvailabilities()))
+                    .sinceVersion(propertyDescription.getSinceVersion())
+                    .deprecatedSinceVersion(propertyDescription.getDeprecatedSinceVersion())
                     .build();
 
             })

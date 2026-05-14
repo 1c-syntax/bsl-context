@@ -17,6 +17,16 @@ public class PlatformContextMethod implements ContextMethod {
     private final List<Context> returnValues = new ArrayList<>();
     private final String description;
     private final List<Availability> availabilities;
+    @lombok.Builder.Default
+    private final String sinceVersion = "";
+    @lombok.Builder.Default
+    private final String deprecatedSinceVersion = "";
+    @lombok.Builder.Default
+    private final String returnValueDescription = "";
+    @lombok.Builder.Default
+    private final List<String> examples = List.of();
+    @lombok.Builder.Default
+    private final List<String> seeAlso = List.of();
 
     private final List<String> rawReturnValues;
 
@@ -48,6 +58,31 @@ public class PlatformContextMethod implements ContextMethod {
     @Override
     public List<Availability> availabilities() {
         return List.copyOf(availabilities);
+    }
+
+    @Override
+    public String sinceVersion() {
+        return sinceVersion;
+    }
+
+    @Override
+    public String deprecatedSinceVersion() {
+        return deprecatedSinceVersion;
+    }
+
+    @Override
+    public String returnValueDescription() {
+        return returnValueDescription;
+    }
+
+    @Override
+    public List<String> examples() {
+        return List.copyOf(examples);
+    }
+
+    @Override
+    public List<String> seeAlso() {
+        return List.copyOf(seeAlso);
     }
 
     @Override

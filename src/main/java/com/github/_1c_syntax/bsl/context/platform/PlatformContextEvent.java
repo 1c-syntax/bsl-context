@@ -12,6 +12,10 @@ public class PlatformContextEvent implements ContextEvent{
   private final List<ContextMethodSignature> signatures;
   private final String description;
   private final List<Availability> availabilities;
+  @lombok.Builder.Default
+  private final String sinceVersion = "";
+  @lombok.Builder.Default
+  private final String deprecatedSinceVersion = "";
 
   @Override
   public ContextName name() {
@@ -31,6 +35,16 @@ public class PlatformContextEvent implements ContextEvent{
   @Override
   public List<Availability> availabilities() {
     return List.copyOf(availabilities);
+  }
+
+  @Override
+  public String sinceVersion() {
+    return sinceVersion;
+  }
+
+  @Override
+  public String deprecatedSinceVersion() {
+    return deprecatedSinceVersion;
   }
 
   @Override

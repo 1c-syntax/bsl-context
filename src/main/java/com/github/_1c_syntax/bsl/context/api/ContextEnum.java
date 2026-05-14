@@ -4,7 +4,8 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Контекстное перечисление.
+ * Системное перечисление платформы (например, {@code ВидДвиженияНакопления}).
+ * Содержит набор именованных значений ({@link ContextEnumValue}).
  */
 public interface ContextEnum extends Context {
     @Override
@@ -12,6 +13,9 @@ public interface ContextEnum extends Context {
         return ContextKind.ENUM;
     }
 
+    /**
+     * Значения перечисления.
+     */
     default List<ContextEnumValue> values() {
         return Collections.emptyList();
     }

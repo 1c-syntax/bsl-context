@@ -23,4 +23,13 @@ public interface ContextSignatureParameter {
      * Описание параметра сигнатуры
      */
     String description();
+
+    /**
+     * Значение по умолчанию для необязательного параметра, извлечённое
+     * из описания (например, {@code Истина}). Пустая строка, если в HBK
+     * не указано.
+     */
+    default String defaultValue() {
+        return "";
+    }
 }

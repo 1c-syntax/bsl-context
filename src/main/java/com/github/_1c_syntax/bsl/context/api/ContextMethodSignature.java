@@ -21,4 +21,12 @@ public interface ContextMethodSignature {
    * Описание сигнатуры метода
    */
   String description();
+
+  /**
+   * Сырая строка синтаксиса (например, {@code Получить(<Индекс>)}).
+   * Пустая строка, если в HBK не указана.
+   */
+  default String syntaxText() {
+    return "";
+  }
 }

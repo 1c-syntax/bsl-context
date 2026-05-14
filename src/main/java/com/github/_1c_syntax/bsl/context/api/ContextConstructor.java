@@ -17,4 +17,25 @@ public interface ContextConstructor {
      * Описание сигнатуры метода
      */
     String description();
+
+    /**
+     * Версия платформы, начиная с которой доступен конструктор.
+     */
+    default String sinceVersion() {
+        return "";
+    }
+
+    /**
+     * Версия платформы, начиная с которой конструктор помечен как не рекомендуемый.
+     */
+    default String deprecatedSinceVersion() {
+        return "";
+    }
+
+    /**
+     * Сырая строка синтаксиса (например, {@code Новый Виджет(<Имя>)}).
+     */
+    default String syntaxText() {
+        return "";
+    }
 }

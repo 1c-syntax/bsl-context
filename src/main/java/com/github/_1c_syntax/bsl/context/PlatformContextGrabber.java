@@ -19,7 +19,18 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
- * Граббер контекста платформы.
+ * Граббер контекста платформы. Распаковывает {@code shcntx_ru.hbk}
+ * и строит {@link ContextProvider} через {@link HbkTreeParser}.
+ * <p>
+ * Удобные точки входа:
+ * <ul>
+ *   <li>{@link #fromHbk(Path, Path)} — явный путь к .hbk;</li>
+ *   <li>{@link #fromPlatformBin(Path, Path)} — каталог {@code bin} платформы
+ *       (например, {@code C:\Program Files\1cv8\8.3.27.1786\bin});</li>
+ *   <li>{@link #autoDetect(Path)} — автодетект самой свежей установки на
+ *       машине через {@link PlatformFinder}.</li>
+ * </ul>
+ * Если {@code workDir} не задан, используется временный каталог.
  */
 public class PlatformContextGrabber {
     private final Path homePath;
@@ -34,9 +45,58 @@ public class PlatformContextGrabber {
     @Getter
     private ContextProvider provider;
 
+    /**
+     * Создаёт граббер по пути к .hbk и каталогу для распаковки.
+     * Сохранён для обратной совместимости — для новых вызовов используйте
+     * {@link #fromHbk(Path, Path)}.
+     */
     public PlatformContextGrabber(Path pathToHbk, Path homePath) {
         this.pathToHbk = pathToHbk;
         this.homePath = homePath;
+    }
+
+    /**
+     * Граббер по явному пути к .hbk-файлу синтакс-помощника.
+     *
+     * @param hbk      путь к {@code shcntx_ru.hbk}
+     * @param workDir  каталог, в который распаковывается FileStorage; если
+     *                 {@code null}, используется временный каталог
+     */
+    public static PlatformContextGrabber fromHbk(Path hbk, Path workDir) throws IOException {
+        return new PlatformContextGrabber(hbk, resolveWorkDir(workDir));
+    }
+
+    /**
+     * Граббер по каталогу {@code bin} платформы. Внутри должен лежать
+     * {@code shcntx_ru.hbk}.
+     */
+    public static PlatformContextGrabber fromPlatformBin(Path platformBin, Path workDir) throws IOException {
+        var hbk = platformBin.resolve("shcntx_ru.hbk");
+        if (!java.nio.file.Files.isRegularFile(hbk)) {
+            throw new IOException("shcntx_ru.hbk not found in " + platformBin);
+        }
+        return fromHbk(hbk, workDir);
+    }
+
+    /**
+     * Автодетект — берёт самую свежую установку платформы на машине
+     * (см. {@link PlatformFinder}). Бросает {@link IOException},
+     * если ни одной установки не найдено.
+     */
+    public static PlatformContextGrabber autoDetect(Path workDir) throws IOException {
+        var install = PlatformFinder.findLatest()
+            .orElseThrow(() -> new IOException(
+                "No 1C platform installations found on this machine. "
+                    + "Use fromHbk(...) or fromPlatformBin(...) with explicit path."));
+        return fromPlatformBin(install.binDir(), workDir);
+    }
+
+    private static Path resolveWorkDir(Path workDir) throws IOException {
+        if (workDir != null) {
+            java.nio.file.Files.createDirectories(workDir);
+            return workDir;
+        }
+        return java.nio.file.Files.createTempDirectory("bsl-context-");
     }
 
     public void parse() throws IOException {

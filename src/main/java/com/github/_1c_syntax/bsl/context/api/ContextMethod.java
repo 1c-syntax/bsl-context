@@ -35,4 +35,52 @@ public interface ContextMethod {
      */
     List<Availability> availabilities();
 
+    /**
+     * Версия платформы, начиная с которой доступен метод (например {@code "8.3.27"}).
+     * Пустая строка, если информация о версии отсутствует.
+     */
+    default String sinceVersion() {
+        return "";
+    }
+
+    /**
+     * Версия платформы, начиная с которой метод помечен как не рекомендуемый
+     * к использованию. Пустая строка, если метод актуален.
+     */
+    default String deprecatedSinceVersion() {
+        return "";
+    }
+
+    /**
+     * Признак generic-метода (имя содержит {@code <…>}-плейсхолдер).
+     */
+    default boolean isGeneric() {
+        return ContextNames.isGeneric(name());
+    }
+
+    /**
+     * Дополнительное описание возвращаемого значения (текст после строки
+     * с типом в секции «Возвращаемое значение:»). Пусто, если такого
+     * описания нет.
+     */
+    default String returnValueDescription() {
+        return "";
+    }
+
+    /**
+     * Примеры использования метода (содержимое блоков «Пример:» в синтакс-помощнике)
+     * как plaintext, без HTML-разметки. Пустой список, если примеров нет.
+     */
+    default java.util.List<String> examples() {
+        return java.util.List.of();
+    }
+
+    /**
+     * Список имён связанных типов/методов из секции «См. также:».
+     * Пустой список, если ссылок нет.
+     */
+    default java.util.List<String> seeAlso() {
+        return java.util.List.of();
+    }
+
 }

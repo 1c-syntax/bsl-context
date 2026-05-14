@@ -1,11 +1,20 @@
 plugins {
     id("java")
+    id("java-library")
     `maven-publish`
 }
 
 group = "com.github._1c_syntax.bsl"
 
 version = "1.0-SNAPSHOT"
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(21))
+    }
+    withSourcesJar()
+    withJavadocJar()
+}
 
 repositories {
     mavenCentral()
@@ -33,7 +42,35 @@ publishing {
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
+
+            pom {
+                name.set("bsl-context")
+                description.set("Парсер синтакс-помощника платформы 1С:Предприятие. " +
+                    "Извлекает типы, методы, свойства, события, конструкторы и их " +
+                    "метаданные (sinceVersion, deprecated, default values, examples) " +
+                    "из .hbk-файлов.")
+                url.set("https://github.com/1c-syntax/bsl-context")
+                licenses {
+                    license {
+                        name.set("LGPL-3.0-or-later")
+                        url.set("https://www.gnu.org/licenses/lgpl-3.0.txt")
+                    }
+                }
+                scm {
+                    url.set("https://github.com/1c-syntax/bsl-context")
+                    connection.set("scm:git:https://github.com/1c-syntax/bsl-context.git")
+                }
+            }
         }
+    }
+}
+
+tasks.withType<Javadoc> {
+    isFailOnError = false
+    (options as StandardJavadocDocletOptions).apply {
+        encoding = "UTF-8"
+        charSet = "UTF-8"
+        addStringOption("Xdoclint:none", "-quiet")
     }
 }
 tasks.getByName<Test>("test") {

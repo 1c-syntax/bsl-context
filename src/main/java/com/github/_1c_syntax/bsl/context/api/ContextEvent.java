@@ -27,4 +27,25 @@ public interface ContextEvent {
    */
   List<Availability> availabilities();
 
+  /**
+   * Версия платформы, начиная с которой доступно событие.
+   */
+  default String sinceVersion() {
+    return "";
+  }
+
+  /**
+   * Версия платформы, начиная с которой событие помечено как не рекомендуемое.
+   */
+  default String deprecatedSinceVersion() {
+    return "";
+  }
+
+  /**
+   * Признак generic-события (имя содержит {@code <…>}-плейсхолдер).
+   */
+  default boolean isGeneric() {
+    return ContextNames.isGeneric(name());
+  }
+
 }

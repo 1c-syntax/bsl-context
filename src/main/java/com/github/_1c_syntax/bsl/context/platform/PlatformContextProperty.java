@@ -16,6 +16,10 @@ public class PlatformContextProperty implements ContextProperty {
     private final AccessMode accessMode;
     private final List<Availability> availabilities;
     private final String description;
+    @lombok.Builder.Default
+    private final String sinceVersion = "";
+    @lombok.Builder.Default
+    private final String deprecatedSinceVersion = "";
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
 
@@ -42,6 +46,16 @@ public class PlatformContextProperty implements ContextProperty {
     @Override
     public AccessMode accessMode() {
         return accessMode;
+    }
+
+    @Override
+    public String sinceVersion() {
+        return sinceVersion;
+    }
+
+    @Override
+    public String deprecatedSinceVersion() {
+        return deprecatedSinceVersion;
     }
 
     @Override

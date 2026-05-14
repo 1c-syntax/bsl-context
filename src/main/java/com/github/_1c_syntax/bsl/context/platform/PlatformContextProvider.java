@@ -50,6 +50,9 @@ public class PlatformContextProvider implements ContextProvider {
                 });
 
         var globalContext = getGlobalContext();
+        if (globalContext == null) {
+            return;
+        }
 
         Stream.of(globalContext.properties(), globalContext.methods(),
                 globalContext.applicationEvents(), globalContext.externalConnectionModuleEvents(),

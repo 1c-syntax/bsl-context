@@ -14,15 +14,137 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class HtmlParser {
 
   private final Path pagesPath;
   private final Pattern parameterNamePattern = Pattern.compile("<(.*)>.*\\((.*)\\)");
+  private static final Pattern EVENT_PARAM_NAME_PATTERN = Pattern.compile("<([^>]+)>");
+  private static final Pattern SINCE_VERSION_PATTERN = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?(?:\\.\\d+)?)");
+  private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("Значение по умолчанию:\\n?\\s*([^.\\n]+?)\\.");
 
   public HtmlParser(Path pagesPath) {
     this.pagesPath = pagesPath;
+  }
+
+  /**
+   * Возвращает текст узла до первого встретившегося {@code <br>} среди
+   * прямых детей. Нужен для отсечения постфикса с XDTO-информацией
+   * в секции «Доступность:», где после {@code <BR>} в той же {@code <p>}
+   * идёт текст про XDTO, который иначе попадал бы в список доступностей.
+   */
+  private static String textBeforeFirstBr(Element element) {
+    var sb = new StringBuilder();
+    for (Node child : element.childNodes()) {
+      if (child instanceof Element e && e.tag().getName().equalsIgnoreCase("br")) {
+        break;
+      }
+      if (child instanceof TextNode t) {
+        sb.append(t.text());
+      } else if (child instanceof Element e) {
+        sb.append(e.text());
+      }
+    }
+    return sb.toString().trim();
+  }
+
+  /**
+   * Разбирает «Сервер, толстый клиент, внешнее соединение.» в список
+   * элементов без точки и пробелов по краям.
+   */
+  private static List<String> splitAvailabilities(String text) {
+    return Arrays.stream(text.split(","))
+        .map(String::trim)
+        .map(s -> s.endsWith(".") ? s.substring(0, s.length() - 1) : s)
+        .toList();
+  }
+
+  /**
+   * Извлекает строку версии (например {@code 8.3.27}) из текста
+   * вида «Доступен, начиная с версии 8.3.27.».
+   */
+  private static String parseSinceVersion(String text) {
+    Matcher m = SINCE_VERSION_PATTERN.matcher(text);
+    return m.find() ? m.group(1) : "";
+  }
+
+  /**
+   * Снимает обрамляющие угловые скобки с имени параметра события вида
+   * {@code <Отказ>}. Если скобок нет — возвращает исходный текст.
+   */
+  private static String stripAngleBrackets(String text) {
+    Matcher m = EVENT_PARAM_NAME_PATTERN.matcher(text);
+    return m.find() ? m.group(1).trim() : text.trim();
+  }
+
+  /**
+   * Ищет «Значение по умолчанию: X.» в описании параметра. Возвращает
+   * пустую строку, если не найдено.
+   */
+  private static String parseDefaultValue(String description) {
+    Matcher m = DEFAULT_VALUE_PATTERN.matcher(description);
+    return m.find() ? m.group(1).trim() : "";
+  }
+
+  /**
+   * Определяет, относится ли текст версии к «Доступен, начиная с версии X»
+   * (первая доступная версия члена). Прочее (например «Не рекомендуется
+   * использовать, начиная с версии X», «Описание изменено в версии X»)
+   * относится к другим полям.
+   */
+  private static boolean isSinceVersionText(String text) {
+    return text.startsWith("Доступен");
+  }
+
+  /**
+   * Определяет, что текст версии относится к «Не рекомендуется использовать,
+   * начиная с версии X» — фиксирует версию депрекации.
+   */
+  private static boolean isDeprecatedSinceVersionText(String text) {
+    return text.startsWith("Не рекомендуется");
+  }
+
+  /**
+   * Разбирает страницу значения перечисления (например,
+   * {@code РежимВиджета/properties/Active1.html}). Структура простая:
+   * заголовок + чаптер {@code Описание:} + version-info.
+   */
+  @SneakyThrows
+  protected EnumValueDescription parseEnumValuePage(Page page) {
+    final var document = Jsoup.parse(
+        pagesPath.resolve(Path.of("." + page.htmlPath())).toFile()
+    );
+    var result = new EnumValueDescription();
+
+    var descriptionSection = false;
+
+    for (Node node : document.body().childNodes()) {
+
+      if (descriptionSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          descriptionSection = false;
+        } else {
+          result.description = result.description.concat(getDescription(node));
+        }
+      }
+
+      if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          result.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          result.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
+      }
+
+      if (node.attr("class").equals("V8SH_chapter") && node instanceof Element n) {
+        descriptionSection = n.text().contains("Описание:") || n.text().contains("Примечание:");
+      }
+    }
+
+    return result;
   }
 
   @SneakyThrows
@@ -104,21 +226,25 @@ public class HtmlParser {
         if (node instanceof TextNode n) {
           text = n.text();
         } else if (node instanceof Element n) {
-          text = n.text();
+          text = textBeforeFirstBr(n);
         }
 
-        result.availabilities = Arrays.stream(text.split(","))
-                .map(String::trim)
-                .map(s -> {
-                  if (s.endsWith(".")) {
-                    s = s.substring(0, s.length() - 1);
-                  }
-                  return s;
-                })
-                .toList();
+        result.availabilities = splitAvailabilities(text);
 
         availabilitySection = false;
 
+      }
+
+      // Версия. На странице может быть несколько <p class="V8SH_versionInfo">:
+      // «Доступен, начиная с версии X», «Не рекомендуется использовать,
+      // начиная с версии X», «Описание изменено в версии X». Различаем по префиксу.
+      if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          result.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          result.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
       }
 
       if (node.attr("class").equals("V8SH_chapter")
@@ -155,6 +281,9 @@ public class HtmlParser {
     var parametersSection = false;
     var methodSignatureDescriptionSection = false;
     var returnValuesSection = false;
+    var syntaxSection = false;
+    var exampleSection = false;
+    var seeAlsoSection = false;
 
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
@@ -165,6 +294,21 @@ public class HtmlParser {
     }
 
     for (Node node : document.body().childNodes()) {
+
+      if (syntaxSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          syntaxSection = false;
+        } else if (currentMethodSignatureDescription != null) {
+          String text = "";
+          if (node instanceof TextNode n) {
+            text = n.text();
+          } else if (node instanceof Element n) {
+            text = n.text();
+          }
+          currentMethodSignatureDescription.syntaxText =
+              currentMethodSignatureDescription.syntaxText.concat(text);
+        }
+      }
 
       if (methodSignatureDescriptionSection) {
 
@@ -212,8 +356,42 @@ public class HtmlParser {
               result.returnValues.add("Произвольный");
             }
 
+          } else {
+            // После списка типов идёт описание возврата (текст / <a>-ссылки).
+            String text = "";
+            if (node instanceof TextNode n) {
+              text = n.text();
+            } else if (node instanceof Element n) {
+              text = n.wholeText();
+            }
+            if (!text.isBlank()) {
+              result.returnValueDescription = result.returnValueDescription.concat(text);
+            }
           }
 
+        }
+      }
+
+      if (exampleSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          exampleSection = false;
+        } else if (node instanceof Element n) {
+          // Пример лежит в <TABLE> с <font>-разметкой; берём чистый текст.
+          var snippet = n.wholeText().trim();
+          if (!snippet.isBlank()) {
+            result.examples.add(snippet);
+          }
+        }
+      }
+
+      if (seeAlsoSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          seeAlsoSection = false;
+        } else if (node instanceof Element n && "a".equalsIgnoreCase(n.tag().getName())) {
+          var text = n.text().trim();
+          if (!text.isBlank()) {
+            result.seeAlso.add(text);
+          }
         }
       }
 
@@ -234,11 +412,9 @@ public class HtmlParser {
             currentMethodSignatureParameterDescription.name = match.group(1);
             currentMethodSignatureParameterDescription.isRequired = match.group(2)
                     .equalsIgnoreCase("Обязательный");
-          } else { // Параметр события
-
-            currentMethodSignatureParameterDescription.name = n.text();
+          } else { // Параметр события — без суффикса (обязательный)
+            currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
             currentMethodSignatureParameterDescription.isRequired = true;
-
           }
 
         } else {
@@ -298,21 +474,22 @@ public class HtmlParser {
         if (node instanceof TextNode n) {
           text = n.text();
         } else if (node instanceof Element n) {
-          text = n.text();
+          text = textBeforeFirstBr(n);
         }
 
-        result.availabilities = Arrays.stream(text.split(","))
-                .map(String::trim)
-                .map(s -> {
-                  if (s.endsWith(".")) {
-                    s = s.substring(0, s.length() - 1);
-                  }
-                  return s;
-                })
-                .toList();
+        result.availabilities = splitAvailabilities(text);
 
         availabilitySection = false;
 
+      }
+
+      if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          result.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          result.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
       }
 
       if (node.attr("class").equals("V8SH_chapter")
@@ -323,6 +500,9 @@ public class HtmlParser {
         parametersSection = n.text().contains("Параметры:");
         methodSignatureDescriptionSection = n.text().contains("Описание варианта метода:");
         returnValuesSection = n.text().contains("Возвращаемое значение:");
+        syntaxSection = "Синтаксис:".equals(n.text().trim());
+        exampleSection = "Пример:".equals(n.text().trim());
+        seeAlsoSection = "См. также:".equals(n.text().trim());
 
         if (n.text().contains("Вариант синтаксиса:")) {
 
@@ -373,6 +553,7 @@ public class HtmlParser {
     var isDescription = false;
     var isParameters = false;
     var isTypeSection = false;
+    var isSyntax = false;
 
     for (Node node : document.body().childNodes()) {
       final var className = node.hasAttr("class") ? node.attr("class") : "";
@@ -381,15 +562,38 @@ public class HtmlParser {
         continue;
       }
 
+      if (className.equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          result.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          result.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
+        continue;
+      }
+
       if (className.equals("V8SH_chapter") && node instanceof Element n) {
         isDescription = false;
         isParameters = false;
         isTypeSection = false;
+        isSyntax = false;
 
-        switch (n.text()) {
+        switch (n.text().trim()) {
           case "Параметры:" -> isParameters = true;
           case "Описание:" -> isDescription = true;
+          case "Синтаксис:" -> isSyntax = true;
         }
+        continue;
+      }
+
+      if (isSyntax) {
+        String text = "";
+        if (node instanceof TextNode n) {
+          text = n.text();
+        } else if (node instanceof Element n) {
+          text = n.text();
+        }
+        result.syntaxText = result.syntaxText.concat(text);
         continue;
       }
 
@@ -407,15 +611,13 @@ public class HtmlParser {
 
           var match = parameterNamePattern.matcher(n.text());
 
-          if (match.find()) { // Параметр метода
+          if (match.find()) { // Параметр конструктора
             currentMethodSignatureParameterDescription.name = match.group(1);
             currentMethodSignatureParameterDescription.isRequired = match.group(2)
               .equalsIgnoreCase("Обязательный");
-          } else { // Параметр события
-
-            currentMethodSignatureParameterDescription.name = n.text();
+          } else { // конструктор без явного суффикса обязательности
+            currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
             currentMethodSignatureParameterDescription.isRequired = true;
-
           }
 
         } else {
@@ -475,6 +677,8 @@ public class HtmlParser {
     private final List<String> types = new ArrayList<>();
     private String description = "";
     private List<String> availabilities = Collections.emptyList();
+    private String sinceVersion = "";
+    private String deprecatedSinceVersion = "";
 
     protected PropertyDescription() {
     }
@@ -486,8 +690,13 @@ public class HtmlParser {
 
     private final List<String> returnValues = new ArrayList<>();
     private String description = "";
+    private String returnValueDescription = "";
     private List<String> availabilities = Collections.emptyList();
     private final List<MethodSignatureDescription> signatures = new ArrayList<>();
+    private final List<String> examples = new ArrayList<>();
+    private final List<String> seeAlso = new ArrayList<>();
+    private String sinceVersion = "";
+    private String deprecatedSinceVersion = "";
 
     private MethodDescription() {
     }
@@ -500,6 +709,7 @@ public class HtmlParser {
     private final List<MethodSignatureParameterDescription> parameters = new ArrayList<>();
     private String name = "";
     private String description = "";
+    private String syntaxText = "";
 
     private MethodSignatureDescription() {
     }
@@ -517,6 +727,15 @@ public class HtmlParser {
     private MethodSignatureParameterDescription() {
     }
 
+    /**
+     * Значение по умолчанию (например, {@code Истина}), извлечённое из текста
+     * описания по шаблону «Значение по умолчанию: X.». Пусто, если шаблон не
+     * найден.
+     */
+    public String getDefaultValue() {
+      return parseDefaultValue(description);
+    }
+
   }
 
   @Getter
@@ -524,8 +743,21 @@ public class HtmlParser {
     private final List<MethodSignatureParameterDescription> parameters = new ArrayList<>();
     private String name = "";
     private String description = "";
+    private String syntaxText = "";
+    private String sinceVersion = "";
+    private String deprecatedSinceVersion = "";
 
     private ConstructorDescription() {
+    }
+  }
+
+  @Getter
+  protected static class EnumValueDescription {
+    private String description = "";
+    private String sinceVersion = "";
+    private String deprecatedSinceVersion = "";
+
+    private EnumValueDescription() {
     }
   }
 }
