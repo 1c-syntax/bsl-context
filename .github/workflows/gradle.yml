@@ -1,0 +1,42 @@
+name: Java CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        java_version: ['21']
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up JDK ${{ matrix.java_version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java_version }}
+          distribution: 'corretto'
+          cache: gradle
+      - name: Build with Gradle
+        run: ./gradlew check --stacktrace
+      - name: Archive test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}-jdk${{ matrix.java_version }}
+          path: "**/test-results/test/**/*.xml"
+          if-no-files-found: ignore
+      - name: Publish test report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-${{ matrix.os }}-jdk${{ matrix.java_version }}
+          path: build/reports/tests/test
+          if-no-files-found: ignore
