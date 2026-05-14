@@ -44,19 +44,13 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
     return defaultValue;
   }
 
-  protected void processRawTypes(List<Context> contexts) {
-
-    types.addAll(
-            rawTypes.stream()
-                    .map(t -> contexts.stream()
-                            .filter(c -> c instanceof ContextType || c instanceof ContextEnum)
-                            .filter(c -> c.name().getName().equals(t))
-                            .findAny())
-                    .filter(Optional::isPresent)
-                    .map(Optional::get)
-                    .toList()
-    );
-
+  protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+    for (var raw : rawTypes) {
+      var resolved = typeIndex.get(raw);
+      if (resolved != null) {
+        types.add(resolved);
+      }
+    }
   }
 
 }

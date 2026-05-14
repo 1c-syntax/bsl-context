@@ -141,6 +141,7 @@ class HtmlParserTest {
         assertThat(method.getExamples()).hasSize(1);
         assertThat(method.getExamples().get(0)).contains("Результат = Виджет.Проверить();");
         assertThat(method.getSeeAlso()).containsExactly("Очистить", "Получить");
+        assertThat(method.getNotes()).contains("Безопасный режим", "может быть отключён");
     }
 
     @Test
@@ -213,10 +214,9 @@ class HtmlParserTest {
         assertThat(ctor)
             .hasFieldOrPropertyWithValue("name", "По размерам");
         assertThat(ctor.getParameters()).hasSize(1);
-        // Имя параметра в варидик-форме — артефакт парсинга строки `<X1>,...,<XN>`:
-        // regex захватывает первый `<…>` и хвост попадает в имя.
+        // Вариадик-форма `<X1>,...,<XN>` теперь корректно разбирается на «X1,...,XN».
         assertThat(ctor.getParameters().get(0))
-            .hasFieldOrPropertyWithValue("name", "Размер1>,...,<РазмерN")
+            .hasFieldOrPropertyWithValue("name", "Размер1,...,РазмерN")
             .hasFieldOrPropertyWithValue("isRequired", false)
             .hasFieldOrPropertyWithValue("types", List.of("Число"));
     }

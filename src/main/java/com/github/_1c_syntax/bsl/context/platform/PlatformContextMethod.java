@@ -24,6 +24,8 @@ public class PlatformContextMethod implements ContextMethod {
     @lombok.Builder.Default
     private final String returnValueDescription = "";
     @lombok.Builder.Default
+    private final String notes = "";
+    @lombok.Builder.Default
     private final List<String> examples = List.of();
     @lombok.Builder.Default
     private final List<String> seeAlso = List.of();
@@ -86,25 +88,25 @@ public class PlatformContextMethod implements ContextMethod {
     }
 
     @Override
+    public String notes() {
+        return notes;
+    }
+
+    @Override
     public String toString() {
         return name.toString();
     }
 
-    protected void processRawTypes(List<Context> contexts) {
-
-        returnValues.addAll(
-                rawReturnValues.stream()
-                        .map(t -> contexts.stream()
-                                .filter(c -> c instanceof ContextType || c instanceof ContextEnum)
-                                .filter(c -> c.name().getName().equals(t))
-                                .findAny())
-                        .filter(Optional::isPresent)
-                        .map(Optional::get)
-                        .toList()
-        );
-
-        signatures.forEach(contextMethodSignature -> ((PlatformContextMethodSignature) contextMethodSignature).processRawTypes(contexts));
-
+    protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+        for (var raw : rawReturnValues) {
+            var resolved = typeIndex.get(raw);
+            if (resolved != null) {
+                returnValues.add(resolved);
+            }
+        }
+        for (var sig : signatures) {
+            ((PlatformContextMethodSignature) sig).processRawTypes(typeIndex);
+        }
     }
 
 }

@@ -52,10 +52,10 @@ public class PlatformContextEvent implements ContextEvent{
     return name.toString();
   }
 
-  protected void processRawTypes(List<Context> contexts) {
-
-    signatures.forEach(contextMethodSignature -> ((PlatformContextMethodSignature) contextMethodSignature).processRawTypes(contexts));
-
+  protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+    for (var sig : signatures) {
+      ((PlatformContextMethodSignature) sig).processRawTypes(typeIndex);
+    }
   }
 
 }

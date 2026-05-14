@@ -20,7 +20,15 @@ import java.util.regex.Pattern;
 public class HtmlParser {
 
   private final Path pagesPath;
-  private final Pattern parameterNamePattern = Pattern.compile("<(.*)>.*\\((.*)\\)");
+  /**
+   * Распознаёт оба формата имени параметра в синтакс-помощнике:
+   * <ul>
+   *   <li>обычный {@code <Имя> (обязательный)} — group1 = «Имя», group2 = null, group3 = «обязательный»;</li>
+   *   <li>вариадик {@code <Имя1>,...,<ИмяN> (необязательный)} — group1 = «Имя1», group2 = «ИмяN», group3 = «необязательный».</li>
+   * </ul>
+   */
+  private final Pattern parameterNamePattern = Pattern.compile(
+      "<([^>]+)>(?:,?\\.\\.\\.,?<([^>]+)>)?\\s*\\(([^)]+)\\)");
   private static final Pattern EVENT_PARAM_NAME_PATTERN = Pattern.compile("<([^>]+)>");
   private static final Pattern SINCE_VERSION_PATTERN = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?(?:\\.\\d+)?)");
   private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("Значение по умолчанию:\\n?\\s*([^.\\n]+?)\\.");
@@ -77,6 +85,19 @@ public class HtmlParser {
   private static String stripAngleBrackets(String text) {
     Matcher m = EVENT_PARAM_NAME_PATTERN.matcher(text);
     return m.find() ? m.group(1).trim() : text.trim();
+  }
+
+  /**
+   * Строит имя параметра по результату матча {@link #parameterNamePattern}.
+   * Для вариадик-формы возвращает {@code Имя1,...,ИмяN}, для обычной — одно имя.
+   */
+  private static String buildParameterName(Matcher match) {
+    var first = match.group(1).trim();
+    var last = match.group(2);
+    if (last == null || last.isBlank()) {
+      return first;
+    }
+    return first + ",...," + last.trim();
   }
 
   /**
@@ -284,6 +305,7 @@ public class HtmlParser {
     var syntaxSection = false;
     var exampleSection = false;
     var seeAlsoSection = false;
+    var notesSection = false;
 
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
@@ -395,6 +417,14 @@ public class HtmlParser {
         }
       }
 
+      if (notesSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          notesSection = false;
+        } else {
+          result.notes = result.notes.concat(getDescription(node));
+        }
+      }
+
       if (parametersSection) {
 
         if (node.attr("class").equals("V8SH_rubric")
@@ -409,8 +439,8 @@ public class HtmlParser {
           var match = parameterNamePattern.matcher(n.text());
 
           if (match.find()) { // Параметр метода
-            currentMethodSignatureParameterDescription.name = match.group(1);
-            currentMethodSignatureParameterDescription.isRequired = match.group(2)
+            currentMethodSignatureParameterDescription.name = buildParameterName(match);
+            currentMethodSignatureParameterDescription.isRequired = match.group(3)
                     .equalsIgnoreCase("Обязательный");
           } else { // Параметр события — без суффикса (обязательный)
             currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
@@ -437,6 +467,13 @@ public class HtmlParser {
             }
 
           } else if (node.attr("class").equals("V8SH_chapter")) {
+            // Выход из секции параметров на следующий V8SH_chapter — нужно
+            // закоммитить накопленный параметр сразу, иначе он может «утечь»
+            // в следующую секцию V8SH_rubric (например, в Возвращаемое значение).
+            if (currentMethodSignatureParameterDescription != null) {
+              currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
+              currentMethodSignatureParameterDescription = null;
+            }
             parametersSection = false;
           } else {
             var text = "";
@@ -465,6 +502,14 @@ public class HtmlParser {
             .concat(getDescription(node));
         }
 
+      }
+
+      if (notesSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          notesSection = false;
+        } else {
+          result.notes = result.notes.concat(getDescription(node));
+        }
       }
 
       if (availabilitySection) {
@@ -503,6 +548,7 @@ public class HtmlParser {
         syntaxSection = "Синтаксис:".equals(n.text().trim());
         exampleSection = "Пример:".equals(n.text().trim());
         seeAlsoSection = "См. также:".equals(n.text().trim());
+        notesSection = "Замечание:".equals(n.text().trim());
 
         if (n.text().contains("Вариант синтаксиса:")) {
 
@@ -612,8 +658,8 @@ public class HtmlParser {
           var match = parameterNamePattern.matcher(n.text());
 
           if (match.find()) { // Параметр конструктора
-            currentMethodSignatureParameterDescription.name = match.group(1);
-            currentMethodSignatureParameterDescription.isRequired = match.group(2)
+            currentMethodSignatureParameterDescription.name = buildParameterName(match);
+            currentMethodSignatureParameterDescription.isRequired = match.group(3)
               .equalsIgnoreCase("Обязательный");
           } else { // конструктор без явного суффикса обязательности
             currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
@@ -691,6 +737,7 @@ public class HtmlParser {
     private final List<String> returnValues = new ArrayList<>();
     private String description = "";
     private String returnValueDescription = "";
+    private String notes = "";
     private List<String> availabilities = Collections.emptyList();
     private final List<MethodSignatureDescription> signatures = new ArrayList<>();
     private final List<String> examples = new ArrayList<>();

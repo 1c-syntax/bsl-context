@@ -38,10 +38,10 @@ public class PlatformContextMethodSignature implements ContextMethodSignature {
     return syntaxText;
   }
 
-  protected void processRawTypes(List<Context> contexts) {
-
-    parameters.forEach(contextSignatureParameter -> ((PlatformContextSignatureParameter) contextSignatureParameter).processRawTypes(contexts));
-
+  protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+    for (var p : parameters) {
+      ((PlatformContextSignatureParameter) p).processRawTypes(typeIndex);
+    }
   }
 
 }

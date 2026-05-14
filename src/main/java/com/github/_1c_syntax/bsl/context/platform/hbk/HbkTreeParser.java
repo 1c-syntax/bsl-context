@@ -182,6 +182,8 @@ public class HbkTreeParser {
                     .sinceVersion(methodDescription.getSinceVersion())
                     .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
                     .returnValueDescription(methodDescription.getReturnValueDescription())
+                    .notes(methodDescription.getNotes())
+                    .notes(methodDescription.getNotes())
                     .examples(List.copyOf(methodDescription.getExamples()))
                     .seeAlso(List.copyOf(methodDescription.getSeeAlso()))
                     .build();

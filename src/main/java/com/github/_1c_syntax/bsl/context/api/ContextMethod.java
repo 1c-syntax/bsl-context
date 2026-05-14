@@ -83,4 +83,12 @@ public interface ContextMethod {
         return java.util.List.of();
     }
 
+    /**
+     * Текст секции «Замечание:» — дополнительные предупреждения о поведении
+     * метода (например, про безопасный режим). Пусто, если секции нет.
+     */
+    default String notes() {
+        return "";
+    }
+
 }
