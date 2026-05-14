@@ -55,6 +55,14 @@ public class PlatformContextGrabber {
     }
 
     /**
+     * Граббер по явному пути к .hbk-файлу синтакс-помощника. FileStorage
+     * распаковывается во временный каталог.
+     */
+    public static PlatformContextGrabber fromHbk(Path hbk) throws IOException {
+        return fromHbk(hbk, null);
+    }
+
+    /**
      * Граббер по явному пути к .hbk-файлу синтакс-помощника.
      *
      * @param hbk      путь к {@code shcntx_ru.hbk}
@@ -63,6 +71,14 @@ public class PlatformContextGrabber {
      */
     public static PlatformContextGrabber fromHbk(Path hbk, Path workDir) throws IOException {
         return new PlatformContextGrabber(hbk, resolveWorkDir(workDir));
+    }
+
+    /**
+     * Граббер по каталогу {@code bin} платформы (внутри должен лежать
+     * {@code shcntx_ru.hbk}). FileStorage распаковывается во временный каталог.
+     */
+    public static PlatformContextGrabber fromPlatformBin(Path platformBin) throws IOException {
+        return fromPlatformBin(platformBin, null);
     }
 
     /**
@@ -75,6 +91,14 @@ public class PlatformContextGrabber {
             throw new IOException("shcntx_ru.hbk not found in " + platformBin);
         }
         return fromHbk(hbk, workDir);
+    }
+
+    /**
+     * Автодетект самой свежей установки платформы на машине. FileStorage
+     * распаковывается во временный каталог.
+     */
+    public static PlatformContextGrabber autoDetect() throws IOException {
+        return autoDetect(null);
     }
 
     /**
