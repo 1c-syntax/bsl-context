@@ -9,4 +9,9 @@ public final class UndefinedType extends PrimitiveType {
     public ContextName name() {
         return NAME;
     }
+
+    @Override
+    public String toString() {
+        return NAME.toString();
+    }
 }

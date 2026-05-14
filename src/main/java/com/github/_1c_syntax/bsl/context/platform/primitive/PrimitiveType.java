@@ -1,5 +1,7 @@
 package com.github._1c_syntax.bsl.context.platform.primitive;
 
+import com.github._1c_syntax.bsl.context.api.ContextConstructor;
+import com.github._1c_syntax.bsl.context.api.ContextEvent;
 import com.github._1c_syntax.bsl.context.api.ContextKind;
 import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
@@ -21,6 +23,16 @@ public abstract class PrimitiveType implements ContextType {
 
     @Override
     public List<ContextProperty> properties() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public List<ContextEvent> events() {
+        return Collections.emptyList();
+    }
+
+    @Override
+    public List<ContextConstructor> constructors() {
         return Collections.emptyList();
     }
 }

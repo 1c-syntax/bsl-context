@@ -14,8 +14,25 @@ public interface ContextMethod {
      * Признак того, что метод возвращает значение.
      */
     boolean hasReturnValue();
+
+    /**
+     * Типы возвращаемых значений метода
+     */
+    List<Context> returnValues();
+
     /**
      * Сигнатуры метода.
      */
     List<ContextMethodSignature> signatures();
+
+    /**
+     * Описание метода.
+     */
+    String description();
+
+    /**
+     * Доступность метода.
+     */
+    List<Availability> availabilities();
+
 }

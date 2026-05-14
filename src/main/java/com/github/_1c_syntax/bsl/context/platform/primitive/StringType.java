@@ -10,4 +10,9 @@ public final class StringType extends PrimitiveType {
         return NAME;
     }
 
+    @Override
+    public String toString() {
+        return NAME.toString();
+    }
+
 }
