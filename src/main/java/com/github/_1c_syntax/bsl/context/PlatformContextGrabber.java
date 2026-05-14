@@ -99,18 +99,49 @@ public class PlatformContextGrabber {
     }
 
     public void parse() throws IOException {
-        var entities = HbkContainerExtractor.extractHbkEntities(pathToHbk);
+        // Если рядом с ru-HBK лежит shcntx_root.hbk (на платформе так и есть
+        // по умолчанию), автоматически делаем двуязычный парс: ru-имена
+        // вариантов сигнатур и параметров получат en-алиасы.
+        var enHbk = pathToHbk.getParent() != null
+            ? pathToHbk.getParent().resolve("shcntx_root.hbk")
+            : null;
+        if (enHbk != null && Files.isRegularFile(enHbk)) {
+            parseBilingual(enHbk);
+            return;
+        }
+        provider = parseSingle(pathToHbk);
+    }
+
+    /**
+     * Парсит два HBK (русский и английский) и объединяет результаты: ru-провайдер
+     * сохраняется как основной, en-провайдер используется только для того,
+     * чтобы проставить en-алиасы для имён сигнатур и параметров (TableOfContent
+     * даёт алиасы только для самих сущностей; имена сигнатур и параметров
+     * приходят из HTML-страниц на одном языке).
+     *
+     * @param enHbk путь к английской hbk (например, {@code shcntx_root.hbk}).
+     */
+    public void parseBilingual(Path enHbk) throws IOException {
+        var ruProvider = parseSingle(pathToHbk);
+        var enProvider = parseSingle(enHbk);
+        com.github._1c_syntax.bsl.context.platform.BilingualMerger.merge(ruProvider, enProvider);
+        provider = ruProvider;
+    }
+
+    private static PlatformContextProvider parseSingle(Path hbk) throws IOException {
+        var entities = HbkContainerExtractor.extractHbkEntities(hbk);
         var pages = readFileStorageIntoMemory(entities.get("FileStorage"));
         var tree = getTreeSyntaxHelper(entities.get("PackBlock"));
 
         var pageSource = new PageSource.InMemory(pages);
         var contexts = new HbkTreeParser(pageSource).parse(tree);
-        provider = new PlatformContextProvider(new PlatformContextStorage(contexts));
+        var built = new PlatformContextProvider(new PlatformContextStorage(contexts));
 
         // Карту байтов страниц больше не держим: после построения provider'а
         // все нужные данные извлечены в Context-объекты. На реальном HBK это
         // 50+ MB и сотни тысяч byte[] — освобождаем сразу.
         pages.clear();
+        return built;
     }
 
     /**

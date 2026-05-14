@@ -34,6 +34,10 @@ public class HtmlParser {
 
   /**
    * Создаёт парсер на источнике страниц (in-memory или файловая система).
+   * Двуязычная поддержка реализуется внешним мерджером
+   * ({@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}),
+   * парсящим ru и en HBK отдельно, поэтому парсер сам в курсе только
+   * одного языка.
    */
   public HtmlParser(PageSource pageSource) {
     this.pageSource = pageSource;
@@ -136,6 +140,32 @@ public class HtmlParser {
    */
   private static boolean isDeprecatedSinceVersionText(String text) {
     return text.startsWith("Не рекомендуется");
+  }
+
+  /**
+   * Разбирает корневую страницу глобального контекста ({@code Global context.html}).
+   * Её основное содержимое — навигационные списки чаптеров «Свойства:»,
+   * «Методы:», «События приложения:» и т.д., которые мы вытаскиваем из
+   * файлового дерева. С самой страницы нам нужна только версия первого
+   * появления.
+   */
+  @SneakyThrows
+  protected GlobalContextPageDescription parseGlobalContextPage(Page page) {
+    var document = pageSource.parse(page.htmlPath());
+    var result = new GlobalContextPageDescription();
+
+    for (Node node : document.body().childNodes()) {
+      if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          result.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          result.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -316,8 +346,12 @@ public class HtmlParser {
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
 
     if (!hasOverloads) {
+      // Имя варианта сигнатуры остаётся пустым: значимого имени в HBK у
+      // одиночной сигнатуры нет (в HTML не присутствует чаптер
+      // «Вариант синтаксиса:…»). Раньше тут было хардкод "Основной",
+      // который ломал двуязычный мерджер — он подменял alias на ту же
+      // русскую строку из en-HBK.
       currentMethodSignatureDescription = new MethodSignatureDescription();
-      currentMethodSignatureDescription.name = "Основной";
     }
 
     for (Node node : document.body().childNodes()) {
@@ -808,6 +842,15 @@ public class HtmlParser {
     private String deprecatedSinceVersion = "";
 
     private EnumValueDescription() {
+    }
+  }
+
+  @Getter
+  protected static class GlobalContextPageDescription {
+    private String sinceVersion = "";
+    private String deprecatedSinceVersion = "";
+
+    private GlobalContextPageDescription() {
     }
   }
 }

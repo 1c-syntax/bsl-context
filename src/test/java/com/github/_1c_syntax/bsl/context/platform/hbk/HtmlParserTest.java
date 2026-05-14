@@ -72,7 +72,10 @@ class HtmlParserTest {
         assertThat(method.getSignatures()).hasSize(1);
 
         var sig = method.getSignatures().get(0);
-        assertThat(sig).hasFieldOrPropertyWithValue("name", "Основной");
+        // Для метода без перегрузок имя варианта пустое — содержательного
+        // имени в HBK нет, а двуязычный мерджер не должен встречать строку
+        // «Основной» как фиктивное имя в обеих HBK.
+        assertThat(sig).hasFieldOrPropertyWithValue("name", "");
         assertThat(sig.getParameters()).isEmpty();
     }
 

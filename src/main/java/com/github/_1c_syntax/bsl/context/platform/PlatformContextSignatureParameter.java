@@ -10,7 +10,12 @@ import java.util.Optional;
 @Builder
 public class PlatformContextSignatureParameter implements ContextSignatureParameter {
 
-  private final ContextName name;
+  /**
+   * Имя параметра. Не {@code final}, чтобы двуязычный мерджер мог
+   * проставить en-алиас (парные HBK дают согласованную позицию
+   * параметров; имя приходит только на одном языке из каждого HBK).
+   */
+  private ContextName name;
   private final boolean isRequired;
   private final List<Context> types = new ArrayList<>();
   private final String description;
@@ -22,6 +27,13 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   @Override
   public ContextName name() {
     return name;
+  }
+
+  /**
+   * Пакетный сеттер для подмены имени из двуязычного мерджера.
+   */
+  void setName(ContextName name) {
+    this.name = name;
   }
 
   @Override

@@ -91,6 +91,7 @@ class RealHbkSmokeTest {
         assertThat(enumValuesWithDescription).isGreaterThan(0);
     }
 
+
     private static void assertResolves(
         com.github._1c_syntax.bsl.context.api.ContextProvider provider,
         String ruName,

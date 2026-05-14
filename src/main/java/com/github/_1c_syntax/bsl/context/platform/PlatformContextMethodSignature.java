@@ -11,7 +11,12 @@ import java.util.List;
 @Builder
 public class PlatformContextMethodSignature implements ContextMethodSignature {
 
-  private final ContextName name;
+  /**
+   * Имя варианта сигнатуры. Не {@code final}, чтобы двуязычный мерджер
+   * мог проставить en-алиас (источник en-имени —- парный HBK; в одном
+   * .hbk имя сигнатуры приходит только на одном языке).
+   */
+  private ContextName name;
   private final List<ContextSignatureParameter> parameters;
   private final String description;
   @lombok.Builder.Default
@@ -21,6 +26,13 @@ public class PlatformContextMethodSignature implements ContextMethodSignature {
   @Override
   public ContextName name() {
     return name;
+  }
+
+  /**
+   * Пакетный сеттер для подмены имени из двуязычного мерджера.
+   */
+  void setName(ContextName name) {
+    this.name = name;
   }
 
   @Override

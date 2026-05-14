@@ -15,6 +15,12 @@ public class PlatformGlobalContext implements Context {
   private final List<ContextEvent> ordinaryApplicationEvents;
   private final List<ContextEvent> applicationEvents;
   private final List<ContextProperty> properties;
+  /**
+   * Версия платформы, начиная с которой существует глобальный контекст
+   * (берётся из самой страницы {@code Global context.html}).
+   */
+  @lombok.Builder.Default
+  private final String sinceVersion = "";
 
   @Override
   public ContextName name() { return name; }
@@ -44,5 +50,9 @@ public class PlatformGlobalContext implements Context {
 
   public List<ContextProperty> properties() {
     return List.copyOf(properties);
+  }
+
+  public String sinceVersion() {
+    return sinceVersion;
   }
 }

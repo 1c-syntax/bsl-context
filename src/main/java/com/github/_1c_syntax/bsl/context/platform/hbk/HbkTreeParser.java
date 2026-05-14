@@ -39,7 +39,12 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class HbkTreeParser {
-    private final List<Context> contexts = new ArrayList<>();
+    // visitPagesFromTree обходит дерево через parallelStream, поэтому список
+    // должен быть thread-safe — иначе при двойном парсе (bilingual) и race
+    // condition в ArrayList добавляется null между ensureCapacity/elementData[size]
+    // и size++. Синхронизированная обёртка достаточно дёшева — добавление
+    // в коллекцию делается ~5к раз за прогон.
+    private final List<Context> contexts = java.util.Collections.synchronizedList(new ArrayList<>());
     private final HtmlParser htmlParser;
 
     /**
@@ -121,6 +126,8 @@ public class HbkTreeParser {
             }
         }
 
+        var pageInfo = htmlParser.parseGlobalContextPage(page);
+
         contexts.add(
             PlatformGlobalContext.builder()
                 .properties(properties)
@@ -129,6 +136,7 @@ public class HbkTreeParser {
                 .ordinaryApplicationEvents(ordinaryApplicationEvents)
                 .sessionModuleEvents(sessionModuleEvents)
                 .externalConnectionModuleEvents(externalConnectionModuleEvents)
+                .sinceVersion(pageInfo.getSinceVersion())
                 .build()
         );
     }
@@ -141,11 +149,19 @@ public class HbkTreeParser {
         List<ContextConstructor> constructors = Collections.emptyList();
 
         for (var subPage : page.children()) {
-            switch (subPage.title().en()) {
-                case "Свойства" -> properties = getPropertiesFromPage(subPage);
-                case "Методы" -> methods = getMethodsFromPage(subPage);
-                case "События" -> events = getEventsFromPage(subPage);
-                case "Конструкторы" -> constructors = getConstructors(subPage);
+            // title.en() и title.ru() в зависимости от языка HBK могут содержать
+            // что угодно (для en-HBK это «Properties/Methods/...»). Сматчиваем
+            // и по локализованному, и по англоязычному варианту.
+            var ru = subPage.title().ru();
+            var en = subPage.title().en();
+            if ("Свойства".equals(ru) || "Свойства".equals(en) || "Properties".equals(ru) || "Properties".equals(en)) {
+                properties = getPropertiesFromPage(subPage);
+            } else if ("Методы".equals(ru) || "Методы".equals(en) || "Methods".equals(ru) || "Methods".equals(en)) {
+                methods = getMethodsFromPage(subPage);
+            } else if ("События".equals(ru) || "События".equals(en) || "Events".equals(ru) || "Events".equals(en)) {
+                events = getEventsFromPage(subPage);
+            } else if ("Конструкторы".equals(ru) || "Конструкторы".equals(en) || "Constructors".equals(ru) || "Constructors".equals(en)) {
+                constructors = getConstructors(subPage);
             }
         }
 
