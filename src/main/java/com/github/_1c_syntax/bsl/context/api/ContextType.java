@@ -31,4 +31,15 @@ public interface ContextType extends Context {
      */
     List<ContextConstructor> constructors();
 
+    /**
+     * Описание типа из синтакс-помощника — содержимое блока «Описание:»
+     * на главной HTML-странице типа. Для платформенных типов источник —
+     * {@code shcntx_*.hbk}, для примитивов — {@code shlang_*.hbk}
+     * (страница {@code def_*}). Если блока «Описание:» на странице нет
+     * (редкий случай) — пустая строка.
+     */
+    default String description() {
+        return "";
+    }
+
 }

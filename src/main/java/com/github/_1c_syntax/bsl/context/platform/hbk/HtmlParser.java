@@ -192,6 +192,33 @@ public class HtmlParser {
   }
 
   /**
+   * Извлекает текст блока «Описание:» с главной HTML-страницы типа
+   * (например, {@code .../catalog234/Map.html}). Структура страницы:
+   * <pre>{@code
+   * <p class="V8SH_chapter">Описание:</p>
+   * <p>Представляет доступ к соответствию.<br>...</p>
+   * }</pre>
+   * Если блок не найден — пустая строка.
+   */
+  @SneakyThrows
+  protected String parseTypePageDescription(Page page) {
+    if (page.htmlPath() == null || page.htmlPath().isEmpty()) {
+      return "";
+    }
+    var document = pageSource.parse(page.htmlPath());
+    for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
+      if ("Описание:".equals(chapter.text().trim())) {
+        var next = chapter.nextElementSibling();
+        if (next != null) {
+          return next.text().trim();
+        }
+        return "";
+      }
+    }
+    return "";
+  }
+
+  /**
    * Разбирает страницу значения перечисления (например,
    * {@code РежимВиджета/properties/Active1.html}). Структура простая:
    * заголовок + чаптер {@code Описание:} + version-info.

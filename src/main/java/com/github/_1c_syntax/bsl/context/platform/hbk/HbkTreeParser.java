@@ -22,12 +22,6 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParame
 import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
 import com.github._1c_syntax.bsl.context.platform.primitive.ArbitraryType;
-import com.github._1c_syntax.bsl.context.platform.primitive.BooleanType;
-import com.github._1c_syntax.bsl.context.platform.primitive.DateType;
-import com.github._1c_syntax.bsl.context.platform.primitive.NullType;
-import com.github._1c_syntax.bsl.context.platform.primitive.NumberType;
-import com.github._1c_syntax.bsl.context.platform.primitive.StringType;
-import com.github._1c_syntax.bsl.context.platform.primitive.UndefinedType;
 import com.github.eightm.lib.Page;
 import com.github.eightm.lib.TableOfContent;
 
@@ -69,14 +63,26 @@ public class HbkTreeParser {
     }
 
     public List<Context> parse(TableOfContent tree) {
+        return parse(tree, List.of());
+    }
 
-        contexts.add(new BooleanType());
-        contexts.add(new DateType());
-        contexts.add(new NullType());
-        contexts.add(new NumberType());
-        contexts.add(new StringType());
-        contexts.add(new UndefinedType());
+    /**
+     * Парсит дерево shcntx и сразу подмешивает дополнительные контексты
+     * (например, примитивы и языковые конструкции из shlang). Все они
+     * попадают в один список ДО создания {@link com.github._1c_syntax.bsl.context.platform.PlatformContextProvider}
+     * — а значит {@code processRawTypes} в его конструкторе сможет
+     * резолвить, например, имя «Строка» в shlang-{@code PrimitivePlaceholderType}
+     * по {@code ==}-идентичности.
+     *
+     * @param tree     дерево shcntx (TableOfContent)
+     * @param extra    дополнительные контексты (shlang-примитивы и keyword'ы)
+     */
+    public List<Context> parse(TableOfContent tree, List<Context> extra) {
+        // Произвольный — псевдо-маркер «любой тип», в shlang страницы нет,
+        // поэтому остаётся хардкодом. Остальные примитивы приходят через
+        // extra из shlang.
         contexts.add(new ArbitraryType());
+        contexts.addAll(extra);
 
         visitPagesFromTree(tree.getPages());
 
@@ -171,6 +177,7 @@ public class HbkTreeParser {
             .properties(properties)
             .events(events)
             .constructors(constructors)
+            .description(htmlParser.parseTypePageDescription(page))
             .build();
 
         contexts.add(type);

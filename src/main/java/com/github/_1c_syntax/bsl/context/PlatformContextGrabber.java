@@ -1,10 +1,12 @@
 package com.github._1c_syntax.bsl.context;
 
+import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkContainerExtractor;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkTreeParser;
 import com.github._1c_syntax.bsl.context.platform.hbk.PageSource;
+import com.github._1c_syntax.bsl.context.platform.hbk.ShlangParser;
 import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorage;
 import com.github.eightm.lib.TableOfContent;
 import lombok.Getter;
@@ -14,6 +16,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -123,6 +126,10 @@ public class PlatformContextGrabber {
     }
 
     public void parse() throws IOException {
+        // shlang_*.hbk (если рядом) даёт примитивы и языковые конструкции —
+        // парсится единожды и подмешивается в общий список контекстов.
+        var languageContexts = parseShlangIfPresent(pathToHbk);
+
         // Если рядом с ru-HBK лежит shcntx_root.hbk (на платформе так и есть
         // по умолчанию), автоматически делаем двуязычный парс: ru-имена
         // вариантов сигнатур и параметров получат en-алиасы.
@@ -130,10 +137,10 @@ public class PlatformContextGrabber {
             ? pathToHbk.getParent().resolve("shcntx_root.hbk")
             : null;
         if (enHbk != null && Files.isRegularFile(enHbk)) {
-            parseBilingual(enHbk);
+            parseBilingual(enHbk, languageContexts);
             return;
         }
-        provider = parseSingle(pathToHbk);
+        provider = parseSingle(pathToHbk, languageContexts);
     }
 
     /**
@@ -146,19 +153,57 @@ public class PlatformContextGrabber {
      * @param enHbk путь к английской hbk (например, {@code shcntx_root.hbk}).
      */
     public void parseBilingual(Path enHbk) throws IOException {
-        var ruProvider = parseSingle(pathToHbk);
-        var enProvider = parseSingle(enHbk);
+        parseBilingual(enHbk, parseShlangIfPresent(pathToHbk));
+    }
+
+    private void parseBilingual(Path enHbk, List<Context> languageContexts) throws IOException {
+        var ruProvider = parseSingle(pathToHbk, languageContexts);
+        // Для en-HBK языковые конструкции не подмешиваем — он используется
+        // только для merger'а en-алиасов сигнатур/параметров.
+        var enProvider = parseSingle(enHbk, List.of());
         com.github._1c_syntax.bsl.context.platform.BilingualMerger.merge(ruProvider, enProvider);
         provider = ruProvider;
     }
 
-    private static PlatformContextProvider parseSingle(Path hbk) throws IOException {
+    /**
+     * Если рядом с переданным HBK лежит {@code shlang_ru.hbk}, читает из него
+     * примитивные типы и языковые конструкции (литералы, операторы,
+     * директивы, аннотации, инструкции препроцессора). Иначе — пустой список.
+     * <p>
+     * Парный {@code shlang_root.hbk}, если есть, подмешивается для
+     * en-алиасов body-keyword'ов (Тогда → Then, КонецЕсли → EndIf и т.п.):
+     * имена сматчиваются по позиции тегов в ru/en страницах.
+     */
+    private static List<Context> parseShlangIfPresent(Path shcntxHbk) {
+        var parent = shcntxHbk.getParent();
+        if (parent == null) {
+            return List.of();
+        }
+        var shlangRu = parent.resolve("shlang_ru.hbk");
+        if (!Files.isRegularFile(shlangRu)) {
+            return List.of();
+        }
+        var ruFs = readFileStorage(shlangRu);
+        if (ruFs == null) {
+            return List.of();
+        }
+        var shlangEn = parent.resolve("shlang_root.hbk");
+        var enFs = Files.isRegularFile(shlangEn) ? readFileStorage(shlangEn) : null;
+        return ShlangParser.parse(ruFs, enFs);
+    }
+
+    private static byte[] readFileStorage(Path hbk) {
+        var entities = HbkContainerExtractor.extractHbkEntities(hbk);
+        return entities.get("FileStorage");
+    }
+
+    private static PlatformContextProvider parseSingle(Path hbk, List<Context> extra) throws IOException {
         var entities = HbkContainerExtractor.extractHbkEntities(hbk);
         var pages = readFileStorageIntoMemory(entities.get("FileStorage"));
         var tree = getTreeSyntaxHelper(entities.get("PackBlock"));
 
         var pageSource = new PageSource.InMemory(pages);
-        var contexts = new HbkTreeParser(pageSource).parse(tree);
+        var contexts = new HbkTreeParser(pageSource).parse(tree, extra);
         var built = new PlatformContextProvider(new PlatformContextStorage(contexts));
 
         // Карту байтов страниц больше не держим: после построения provider'а

@@ -17,7 +17,12 @@ import java.util.List;
 @Builder
 public record PlatformContextType(ContextName name, List<ContextMethod> methods, List<ContextConstructor> constructors,
                                   List<ContextEvent> events,
-                                  List<ContextProperty> properties) implements ContextType {
+                                  List<ContextProperty> properties,
+                                  String description) implements ContextType {
+
+    public PlatformContextType {
+        if (description == null) description = "";
+    }
 
     @Override
     public ContextKind kind() {
