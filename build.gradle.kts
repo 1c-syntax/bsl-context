@@ -4,9 +4,9 @@ plugins {
     `maven-publish`
 }
 
-group = "com.github._1c_syntax.bsl"
+group = "io.github.1c-syntax"
 
-version = "1.0-SNAPSHOT"
+version = "0.1.0-SNAPSHOT"
 
 java {
     toolchain {
@@ -18,11 +18,14 @@ java {
 
 repositories {
     mavenCentral()
+    // bsl-help-toc-parser подключаем через jitpack по SHA коммита master:
+    // версия 0.2.0 (переход на 1c-syntax fork ANTLR + Java 21) ещё не
+    // опубликована в Maven Central, на jitpack доступна сразу после merge.
     maven(url = "https://jitpack.io")
 }
 
 dependencies {
-    implementation("com.github.1c-syntax:bsl-help-toc-parser:ab6c83315d")
+    implementation("com.github.1c-syntax:bsl-help-toc-parser:4452a79")
     implementation("org.jsoup:jsoup:1.18.3")
 
     compileOnly("org.projectlombok:lombok:1.18.34")
