@@ -8,6 +8,10 @@ package com.github._1c_syntax.bsl.context.api;
  *       (Строка, Число, Дата, Булево, Тип, Произвольный, Неопределено, Null).</li>
  *   <li>{@link #TYPE} — платформенный тип со свойствами/методами/событиями/
  *       конструкторами.</li>
+ *   <li>{@link #COLLECTION} — коллекция значений (Массив, Соответствие,
+ *       Структура, ТаблицаЗначений и т.п.) — расширение {@link #TYPE}, у
+ *       которого дополнительно есть типы элементов и сведения о поддержке
+ *       {@code Для каждого} / {@code [...]}.</li>
  *   <li>{@link #ENUM} — системное перечисление платформы и его значения.</li>
  *   <li>{@link #GLOBAL_CONTEXT} — глобальный контекст: top-level методы,
  *       свойства, события.</li>
@@ -20,5 +24,5 @@ package com.github._1c_syntax.bsl.context.api;
  * </ul>
  */
 public enum ContextKind {
-    PRIMITIVE_TYPE, TYPE, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD
+    PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD
 }

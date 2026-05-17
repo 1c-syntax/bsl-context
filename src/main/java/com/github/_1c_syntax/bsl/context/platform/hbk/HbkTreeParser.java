@@ -11,6 +11,7 @@ import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextSignatureParameter;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextCollection;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextConstructor;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextEnum;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextEnumValue;
@@ -171,16 +172,38 @@ public class HbkTreeParser {
             }
         }
 
-        var type = PlatformContextType.builder()
-            .name(new ContextName(page.title().ru(), page.title().en()))
-            .methods(methods)
-            .properties(properties)
-            .events(events)
-            .constructors(constructors)
-            .description(htmlParser.parseTypePageDescription(page))
-            .build();
+        var name = new ContextName(page.title().ru(), page.title().en());
+        var description = htmlParser.parseTypePageDescription(page);
+        var collection = htmlParser.parseTypePageCollectionInfo(page);
 
-        contexts.add(type);
+        // Если у страницы типа есть блок «Элементы коллекции:» — это коллекция
+        // (Массив, Соответствие, Структура, ТаблицаЗначений и т.п.), публикуем
+        // её как ContextCollection с типами элементов и доступными операциями
+        // обхода / индексатора. Иначе — обычный ContextType.
+        if (!collection.isEmpty()) {
+            contexts.add(PlatformContextCollection.builder()
+                .name(name)
+                .methods(methods)
+                .properties(properties)
+                .events(events)
+                .constructors(constructors)
+                .description(description)
+                .rawCollectionElementTypes(collection.rawElementTypes())
+                .supportsForEach(collection.supportsForEach())
+                .forEachDescription(collection.forEachDescription())
+                .supportsIndexAccess(collection.supportsIndexAccess())
+                .indexAccessDescription(collection.indexAccessDescription())
+                .build());
+        } else {
+            contexts.add(PlatformContextType.builder()
+                .name(name)
+                .methods(methods)
+                .properties(properties)
+                .events(events)
+                .constructors(constructors)
+                .description(description)
+                .build());
+        }
     }
 
     private void visitEnumPage(Page page) {

@@ -219,6 +219,188 @@ public class HtmlParser {
   }
 
   /**
+   * Информация о коллекции, извлечённая из блока «Элементы коллекции:»
+   * на главной HTML-странице типа. Если блока нет — {@link #isEmpty()}
+   * = {@code true} и список типов пустой.
+   *
+   * @param rawElementTypes        сырые ru-имена типов элементов (резолвятся
+   *                               в {@link com.github._1c_syntax.bsl.context.api.Context}
+   *                               через {@code PlatformContextProvider})
+   * @param supportsForEach        упомянут ли в блоке оператор «Для каждого»
+   * @param forEachDescription     описание поведения обхода — «выбираются
+   *                               значения / элементы / строки …»
+   * @param supportsIndexAccess    упомянут ли оператор {@code [...]}
+   * @param indexAccessDescription описание аргумента индексатора — «индекс
+   *                               (нумерация с 0) / значение ключа …»
+   */
+  public record TypePageCollectionInfo(
+    List<String> rawElementTypes,
+    boolean supportsForEach,
+    String forEachDescription,
+    boolean supportsIndexAccess,
+    String indexAccessDescription
+  ) {
+    public static final TypePageCollectionInfo EMPTY = new TypePageCollectionInfo(
+      List.of(), false, "", false, "");
+
+    public boolean isEmpty() {
+      return rawElementTypes.isEmpty();
+    }
+  }
+
+  /**
+   * Разбирает блок «Элементы коллекции:» на главной HTML-странице типа.
+   * Поддерживаются две разметки имени типа элемента:
+   * <pre>{@code
+   * <p class="V8SH_chapter">Элементы коллекции:</p>
+   * <a href="...">КлючИЗначение</a><br>...
+   * }</pre>
+   * (тип — ссылкой, как у {@code Соответствие}) и
+   * <pre>{@code
+   * <p class="V8SH_chapter">Элементы коллекции:</p>
+   * Произвольный<br>...
+   * }</pre>
+   * (тип — текстом до первого {@code <br>}, как у {@code Массив} —
+   * «Произвольный» резолвится в синтетический {@code ArbitraryType}).
+   * <p>
+   * Дополнительно вытаскивает поддержку «Для каждого» и индексатора
+   * {@code [...]} с их описаниями — это отдельные text-фрагменты между
+   * {@code <br>} в том же блоке.
+   * <p>
+   * Если блока на странице нет — {@link TypePageCollectionInfo#EMPTY}.
+   */
+  @SneakyThrows
+  protected TypePageCollectionInfo parseTypePageCollectionInfo(Page page) {
+    if (page.htmlPath() == null || page.htmlPath().isEmpty()) {
+      return TypePageCollectionInfo.EMPTY;
+    }
+    var document = pageSource.parse(page.htmlPath());
+    for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
+      if (!"Элементы коллекции:".equals(chapter.text().trim())) {
+        continue;
+      }
+      return parseCollectionBlock(chapter);
+    }
+    return TypePageCollectionInfo.EMPTY;
+  }
+
+  /**
+   * Walk's через всех siblings до следующего chapter'а, нарезает по
+   * {@code <br>} на text-фрагменты и распределяет их по семантике
+   * (имя типа / Для каждого / индексатор).
+   */
+  private static TypePageCollectionInfo parseCollectionBlock(Element chapter) {
+    var fromLinks = new ArrayList<String>();
+    var fragments = new ArrayList<String>();
+    var current = new StringBuilder();
+    // Имя типа — ссылка / текст ДО первого <br>. Всё после первого <br> —
+    // это уже описание, и встроенные в него <a>-теги (например, ссылка на
+    // «Стиль» в фразе «При обходе выбираются <a>Стиль</a>») должны
+    // попадать в текст описания, а не в список типов элементов.
+    var beforeFirstBr = true;
+
+    for (Node node = chapter.nextSibling(); node != null; node = node.nextSibling()) {
+      if (node instanceof Element el) {
+        var tag = el.tagName().toLowerCase(java.util.Locale.ROOT);
+        if ("p".equals(tag) && el.hasClass("V8SH_chapter")) {
+          break;
+        }
+        if ("br".equals(tag)) {
+          fragments.add(current.toString().trim());
+          current.setLength(0);
+          beforeFirstBr = false;
+        } else if ("a".equals(tag) && beforeFirstBr) {
+          var name = el.text().trim();
+          if (!name.isEmpty()) {
+            fromLinks.add(name);
+          }
+        } else {
+          // i, span, font, <a> в описании после <br> — собираем как текст
+          current.append(el.text());
+        }
+      } else if (node instanceof TextNode t) {
+        current.append(t.text());
+      }
+    }
+    if (current.length() > 0) {
+      fragments.add(current.toString().trim());
+    }
+
+    var elementTypes = !fromLinks.isEmpty()
+      ? fromLinks
+      : (fragments.isEmpty() ? List.<String>of() : splitElementNames(fragments.get(0)));
+
+    var supportsForEach = false;
+    var forEachDesc = "";
+    var supportsIndex = false;
+    var indexDesc = "";
+    // Если имена пришли из links — первый text-фрагмент несёт «Для каждого»;
+    // если имена из text — первый фрагмент это и есть имя, начинаем со второго.
+    int startIdx = fromLinks.isEmpty() ? 1 : 0;
+    for (int i = startIdx; i < fragments.size(); i++) {
+      var frag = fragments.get(i);
+      if (frag.isEmpty()) continue;
+      if (frag.contains("Для каждого")) {
+        supportsForEach = true;
+        forEachDesc = stripBoilerplate(frag);
+      } else if (frag.contains("[...]") || frag.contains("оператора [")) {
+        supportsIndex = true;
+        indexDesc = stripBoilerplate(frag);
+      }
+    }
+    return new TypePageCollectionInfo(elementTypes, supportsForEach, forEachDesc,
+      supportsIndex, indexDesc);
+  }
+
+  /**
+   * Срезает с описания «Элементы коллекции» стандартный prefix
+   * («Для объекта доступен обход коллекции посредством оператора Для каждого
+   * … Из … Цикл.», «Возможно обращение к … посредством оператора [...].» и
+   * подобные) — оставляет только смысловую часть («При обходе выбираются …»,
+   * «В качестве аргумента передается …»).
+   * <p>
+   * Резать «по первой точке» нельзя: у индексатора во фразе есть {@code [...]},
+   * первая точка попадает внутрь этого {@code [...]}. Используем явные
+   * маркеры окончания префикса.
+   */
+  private static String stripBoilerplate(String s) {
+    var t = s.trim();
+    if (t.startsWith("Для объекта доступен")) {
+      // «… оператора Для каждого … Из … Цикл. <хвост>»
+      var marker = "Цикл.";
+      var idx = t.indexOf(marker);
+      if (idx >= 0) {
+        return t.substring(idx + marker.length()).trim();
+      }
+    }
+    if (t.startsWith("Возможно обращение")) {
+      // «… посредством оператора [...]. <хвост>»
+      var marker = "[...].";
+      var idx = t.indexOf(marker);
+      if (idx >= 0) {
+        return t.substring(idx + marker.length()).trim();
+      }
+    }
+    return t;
+  }
+
+  /**
+   * «Произвольный» / «Строка, Число» / «Строка / Число» — разные варианты
+   * перечисления нескольких типов элемента в одной строке. Разбиваем по
+   * запятым и слэшам, фильтруем пустые.
+   */
+  private static List<String> splitElementNames(String raw) {
+    var result = new ArrayList<String>();
+    for (var part : raw.split("[,/]")) {
+      var trimmed = part.trim();
+      if (!trimmed.isEmpty()) {
+        result.add(trimmed);
+      }
+    }
+    return result;
+  }
+
+  /**
    * Разбирает страницу значения перечисления (например,
    * {@code РежимВиджета/properties/Active1.html}). Структура простая:
    * заголовок + чаптер {@code Описание:} + version-info.

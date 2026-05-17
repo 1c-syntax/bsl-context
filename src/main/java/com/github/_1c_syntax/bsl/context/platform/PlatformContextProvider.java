@@ -32,17 +32,25 @@ public class PlatformContextProvider implements ContextProvider {
 
         contexts.stream()
                 .parallel()
-                .filter(context -> context instanceof PlatformContextType)
+                .filter(context -> context instanceof PlatformContextType
+                    || context instanceof PlatformContextCollection)
                 .flatMap(context -> {
-                    var c = (PlatformContextType) context;
+                    var c = (ContextType) context;
 
-                    return
-                        Stream.of(
-                            c.properties().stream(),
-                            c.methods().stream(),
-                            c.events().stream(),
-                            c.constructors().stream()
-                            );
+                    // Сам тип-коллекция тоже резолвим вместе с его членами —
+                    // имена элементов коллекции живут в самом ContextCollection,
+                    // а не в его properties/methods.
+                    Stream<?> selfStream = c instanceof PlatformContextCollection
+                        ? Stream.of(c)
+                        : Stream.empty();
+
+                    return Stream.of(
+                        selfStream,
+                        c.properties().stream(),
+                        c.methods().stream(),
+                        c.events().stream(),
+                        c.constructors().stream()
+                    );
                 })
             .flatMap(Function.identity())
                 .forEach(context -> {
@@ -53,6 +61,8 @@ public class PlatformContextProvider implements ContextProvider {
                     } else if (context instanceof PlatformContextEvent c) {
                         c.processRawTypes(typeIndex);
                     } else if (context instanceof PlatformContextConstructor c) {
+                        c.processRawTypes(typeIndex);
+                    } else if (context instanceof PlatformContextCollection c) {
                         c.processRawTypes(typeIndex);
                     }
                 });

@@ -108,6 +108,102 @@ class RealHbkSmokeTest {
             .as("тип generic-свойства <Имя справочника> должен резолвиться в generic-тип СправочникМенеджер.<…>")
             .isNotEmpty()
             .anyMatch(t -> t.isGeneric() && t.name().getName().startsWith("СправочникМенеджер."));
+
+        // === ContextCollection: разные кейсы ===
+
+        // 1. Соответствие — элемент типизированный (ссылка → КлючИЗначение),
+        //    доступен и обход «Для каждого», и индексатор (по ключу).
+        assertCollection(provider, "Соответствие", c -> {
+            assertThat(c.collectionElementTypes())
+                .as("Соответствие.collectionElementTypes → КлючИЗначение")
+                .singleElement()
+                .satisfies(t -> assertThat(t.name().getName()).isEqualTo("КлючИЗначение"));
+            assertThat(c.supportsForEach()).as("Соответствие supportsForEach").isTrue();
+            assertThat(c.forEachDescription())
+                .as("у Соответствие при обходе выбираются элементы (boilerplate-prefix отрезан)")
+                .contains("выбираются")
+                .doesNotContain("Для каждого", "Для объекта доступен");
+            assertThat(c.supportsIndexAccess()).as("Соответствие supportsIndexAccess").isTrue();
+            assertThat(c.indexAccessDescription())
+                .as("у Соответствие в скобки передаётся ключ")
+                .contains("ключ")
+                .doesNotContain("Возможно обращение");
+        });
+
+        // 2. Массив — элемент текстом «Произвольный» (резолвится в синтетический
+        //    ArbitraryType), индексатор от 0.
+        assertCollection(provider, "Массив", c -> {
+            assertThat(c.collectionElementTypes())
+                .as("Массив.collectionElementTypes → Произвольный")
+                .singleElement()
+                .satisfies(t -> {
+                    assertThat(t.name().getName()).isEqualTo("Произвольный");
+                    assertThat(t.kind())
+                        .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.PRIMITIVE_TYPE);
+                });
+            assertThat(c.supportsForEach()).as("Массив supportsForEach").isTrue();
+            assertThat(c.supportsIndexAccess()).as("Массив supportsIndexAccess").isTrue();
+            assertThat(c.indexAccessDescription())
+                .as("у Массив в [] передаётся индекс (нумерация с 0)")
+                .containsAnyOf("индекс", "нумерация");
+        });
+
+        // 3. Структура — элемент КлючИЗначение, обход «Для каждого»,
+        //    индексатор (по имени ключа).
+        assertCollection(provider, "Структура", c -> {
+            assertThat(c.collectionElementTypes())
+                .extracting(t -> t.name().getName())
+                .contains("КлючИЗначение");
+            assertThat(c.supportsForEach()).isTrue();
+        });
+
+        // 4. ТаблицаЗначений — элемент СтрокаТаблицыЗначений.
+        assertCollection(provider, "ТаблицаЗначений", c -> {
+            assertThat(c.collectionElementTypes())
+                .extracting(t -> t.name().getName())
+                .contains("СтрокаТаблицыЗначений");
+            assertThat(c.supportsForEach()).isTrue();
+        });
+
+        // 5. ЭлементыФормы — несколько типов элементов (5 вариантов).
+        assertCollection(provider, "ЭлементыФормы", c -> {
+            var names = c.collectionElementTypes().stream()
+                .map(t -> t.name().getName())
+                .toList();
+            assertThat(names)
+                .as("ЭлементыФормы — multi-type collection")
+                .contains("ГруппаФормы", "ДекорацияФормы", "КнопкаФормы",
+                    "ПолеФормы", "ТаблицаФормы");
+        });
+
+        // 6. БуферДвоичныхДанных — элемент примитивного типа Число.
+        assertCollection(provider, "БуферДвоичныхДанных", c -> {
+            assertThat(c.collectionElementTypes())
+                .extracting(t -> t.name().getName())
+                .contains("Число");
+        });
+
+        // 7. ФиксированныйМассив — не коллекция в смысле bsl-context: на странице
+        //    блока «Элементы коллекции:» нет, поэтому это обычный ContextType.
+        assertThat(provider.getContextByName("ФиксированныйМассив").orElseThrow())
+            .as("у ФиксированныйМассив страница СП не содержит блока «Элементы коллекции:» — не ContextCollection")
+            .isNotInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+    }
+
+    private static void assertCollection(
+        com.github._1c_syntax.bsl.context.api.ContextProvider provider,
+        String name,
+        java.util.function.Consumer<com.github._1c_syntax.bsl.context.api.ContextCollection> body
+    ) {
+        var ctx = provider.getContextByName(name).orElseThrow(() ->
+            new AssertionError("type not found: " + name));
+        assertThat(ctx)
+            .as("%s должен быть ContextCollection", name)
+            .isInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+        assertThat(ctx.kind())
+            .as("%s.kind() == COLLECTION", name)
+            .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.COLLECTION);
+        body.accept((com.github._1c_syntax.bsl.context.api.ContextCollection) ctx);
     }
 
 
