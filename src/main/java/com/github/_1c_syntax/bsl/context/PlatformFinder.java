@@ -16,15 +16,20 @@ import java.util.stream.Stream;
  * Поиск установленных платформ 1С на машине — упрощённый Java-аналог
  * OneScript-библиотеки {@code v8find}.
  * <p>
- * Сканирует стандартные локации:
+ * Раскладка платформы на разных OS (см. v8find/Платформа1С.os):
  * <ul>
- *   <li>Windows: переменные среды {@code ProgramW6432}, {@code ProgramFiles(x86)},
- *       {@code ProgramFiles} → подпапки {@code 1Cv8}, {@code 1Cv82}, {@code 1Cv8t}</li>
- *   <li>Linux: {@code /opt/1C/v8.*}, {@code /opt/1cv8}</li>
- *   <li>macOS: {@code /opt/1cv8}</li>
+ *   <li>Windows: {@code C:\Program Files\{1Cv8,1Cv82,1Cv8t}\<version>\bin\}
+ *       — HBK в подкаталоге {@code bin/}.</li>
+ *   <li>Linux: {@code /opt/1cv8/{i386,x86_64}/<version>/} и
+ *       {@code /opt/1C/v8.<X>/{i386,x86_64}/<version>/} —
+ *       HBK живёт <b>прямо в version-каталоге</b>, без {@code bin/}.</li>
+ *   <li>macOS: {@code /opt/1cv8/<version>/} — HBK прямо в version-каталоге.</li>
  * </ul>
- * Внутри каждого корня ищет подпапки с именем-версией ({@code 8.3.27.1786})
- * и проверяет наличие {@code bin/shcntx_ru.hbk} как признака валидной установки.
+ * Метод {@link PlatformInstall#binDir()} возвращает каталог, в котором
+ * фактически лежат файлы синтакс-помощника — то есть
+ * {@code <version>/bin/} на Windows и {@code <version>/} на Linux/macOS.
+ * Имя {@code binDir} сохранено по историческим причинам (исходно код был
+ * написан под Windows-раскладку).
  * <p>
  * Чтение {@code 1CEStart.cfg} (значения {@code InstalledLocation}) пока не
  * реализовано — для большинства машин достаточно сканирования стандартных
@@ -34,6 +39,8 @@ public final class PlatformFinder {
 
     private static final Pattern VERSION_DIR = Pattern.compile("8\\.\\d+\\.\\d+\\.\\d+");
     private static final List<String> WINDOWS_SUFFIXES = List.of("1Cv8", "1Cv82", "1Cv8t");
+    private static final boolean IS_WINDOWS =
+        System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
 
     private PlatformFinder() {
     }
@@ -155,10 +162,13 @@ public final class PlatformFinder {
     }
 
     private static void tryAddInstall(Path versionDir, List<PlatformInstall> sink) {
-        var binDir = versionDir.resolve("bin");
-        var hbk = binDir.resolve("shcntx_ru.hbk");
+        // На Windows HBK живёт в подкаталоге bin/; на Linux/macOS — прямо
+        // в version-каталоге (см. v8find/СоздательВерсииПлатформы.os
+        // → ПолучитьПутьКФайлу, ветка ЭтоWindows / Иначе).
+        var hbkDir = IS_WINDOWS ? versionDir.resolve("bin") : versionDir;
+        var hbk = hbkDir.resolve("shcntx_ru.hbk");
         if (Files.isRegularFile(hbk)) {
-            sink.add(new PlatformInstall(versionDir.getFileName().toString(), binDir));
+            sink.add(new PlatformInstall(versionDir.getFileName().toString(), hbkDir));
         }
     }
 
