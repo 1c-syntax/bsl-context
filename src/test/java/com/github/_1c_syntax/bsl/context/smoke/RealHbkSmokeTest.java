@@ -166,15 +166,24 @@ class RealHbkSmokeTest {
         });
 
         // 5. ЭлементыФормы — несколько типов элементов (5 вариантов).
-        assertCollection(provider, "ЭлементыФормы", c -> {
-            var names = c.collectionElementTypes().stream()
-                .map(t -> t.name().getName())
-                .toList();
-            assertThat(names)
-                .as("ЭлементыФормы — multi-type collection")
-                .contains("ГруппаФормы", "ДекорацияФормы", "КнопкаФормы",
-                    "ПолеФормы", "ТаблицаФормы");
-        });
+        //    В HBK два типа с этим же ru-именем: FormItems (managed forms,
+        //    коллекция) и Controls (обычные формы, не коллекция). Под именем
+        //    «ЭлементыФормы» в storage может оказаться любой из них (первый-
+        //    побеждает), поэтому здесь выбираем именно FormItems по en-алиасу.
+        var formItems = provider.getContextByName("FormItems").orElseThrow();
+        assertThat(formItems)
+            .as("FormItems должен быть ContextCollection")
+            .isInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+        assertThat(formItems.kind())
+            .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.COLLECTION);
+        var formItemsNames = ((com.github._1c_syntax.bsl.context.api.ContextCollection) formItems)
+            .collectionElementTypes().stream()
+            .map(t -> t.name().getName())
+            .toList();
+        assertThat(formItemsNames)
+            .as("ЭлементыФормы (FormItems) — multi-type collection")
+            .contains("ГруппаФормы", "ДекорацияФормы", "КнопкаФормы",
+                "ПолеФормы", "ТаблицаФормы");
 
         // 6. БуферДвоичныхДанных — элемент примитивного типа Число.
         assertCollection(provider, "БуферДвоичныхДанных", c -> {

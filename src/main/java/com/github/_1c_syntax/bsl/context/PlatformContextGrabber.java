@@ -232,7 +232,7 @@ public class PlatformContextGrabber {
                     while ((len = stream.read(buffer)) > 0) {
                         out.write(buffer, 0, len);
                     }
-                    pages.put(entry.getName(), out.toByteArray());
+                    pages.put(PageSource.normalize(entry.getName()), out.toByteArray());
                 }
                 entry = stream.getNextEntry();
             }

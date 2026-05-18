@@ -34,6 +34,30 @@ public interface PageSource {
     }
 
     /**
+     * Нормализует путь страницы СП к единому виду:
+     * <ul>
+     *   <li>{@code \} (Windows-style, как часто хранится в TOC PackBlock
+     *       и в некоторых HBK ZIP-entries) → {@code /};</li>
+     *   <li>ведущий слэш срезается (ключи ZIP — без него,
+     *       {@code Page.htmlPath()} — со слэшем);</li>
+     *   <li>повторные слэши (например, {@code \/methods/...} после смеси
+     *       parent-с-{@code \} + child-с-{@code /}) схлопываются.</li>
+     * </ul>
+     * Используется и при заливке в map (см. {@code readFileStorageIntoMemory}),
+     * и при lookup'е в {@link InMemory#open(String)} — чтобы lookup был
+     * устойчив к различиям в разметке путей внутри HBK.
+     */
+    static String normalize(String path) {
+        if (path == null || path.isEmpty()) return path;
+        var slashed = path.replace('\\', '/');
+        // Схлопываем "//" в "/".
+        while (slashed.contains("//")) {
+            slashed = slashed.replace("//", "/");
+        }
+        return slashed.charAt(0) == '/' ? slashed.substring(1) : slashed;
+    }
+
+    /**
      * In-memory источник: путь → байты. Используется по умолчанию, чтобы
      * избежать распаковки 20+k файлов на диск.
      */
@@ -51,12 +75,6 @@ public interface PageSource {
                 throw new IOException("page not found in memory: " + relativePath);
             }
             return new java.io.ByteArrayInputStream(bytes);
-        }
-
-        private static String normalize(String path) {
-            // Page.htmlPath() начинается со слэша, ключи в zip — без.
-            if (path == null || path.isEmpty()) return path;
-            return path.charAt(0) == '/' ? path.substring(1) : path;
         }
     }
 

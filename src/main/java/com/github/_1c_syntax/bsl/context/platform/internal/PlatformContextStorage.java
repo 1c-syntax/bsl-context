@@ -36,9 +36,23 @@ public class PlatformContextStorage {
 
         this.contexts = contexts;
 
+        // В HBK встречаются разные типы с одинаковым русским или английским
+        // именем (например, «ЭлементыФормы»: FormItems — управляемые формы,
+        // коллекция; Controls — устаревшие обычные формы, обычный тип).
+        // putIfAbsent: первый встретившийся побеждает, не затираем —
+        // поведение более предсказуемо, чем тихая перезапись. Какой именно
+        // окажется первым, недетерминированно (HbkTreeParser парсит дерево
+        // через parallelStream); если нужен конкретный — обращайтесь по
+        // уникальному en-алиасу (FormItems, Controls).
         contexts.forEach(context -> {
-            contextsByNames.put(context.name().getName(), context);
-            contextsByNames.put(context.name().getAlias(), context);
+            var name = context.name().getName();
+            var alias = context.name().getAlias();
+            if (!name.isBlank()) {
+                contextsByNames.putIfAbsent(name, context);
+            }
+            if (!alias.isBlank()) {
+                contextsByNames.putIfAbsent(alias, context);
+            }
         });
     }
 

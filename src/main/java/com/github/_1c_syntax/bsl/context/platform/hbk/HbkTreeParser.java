@@ -34,11 +34,15 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 public class HbkTreeParser {
-    // visitPagesFromTree обходит дерево через parallelStream, поэтому список
-    // должен быть thread-safe — иначе при двойном парсе (bilingual) и race
-    // condition в ArrayList добавляется null между ensureCapacity/elementData[size]
-    // и size++. Синхронизированная обёртка достаточно дёшева — добавление
-    // в коллекцию делается ~5к раз за прогон.
+    // visitPagesFromTree обходит дерево через parallelStream — Jsoup-parse
+    // тысяч HTML-страниц параллельно ускоряет полный парс HBK с ~3.3с до ~2.4с.
+    // Порядок добавления при этом недетерминирован, поэтому при коллизии
+    // имён (в HBK есть, например, два «ЭлементыФормы»: FormItems-коллекция и
+    // Controls-тип) PlatformContextStorage использует putIfAbsent (первый-
+    // побеждает): какой именно из двух окажется первым — недетерминированно,
+    // но мы не затираем уже проиндексированный контекст. Сам список —
+    // synchronizedList, иначе ArrayList.add под contention теряет элементы
+    // (между ensureCapacity и size++).
     private final List<Context> contexts = java.util.Collections.synchronizedList(new ArrayList<>());
     private final HtmlParser htmlParser;
 
@@ -120,7 +124,7 @@ public class HbkTreeParser {
         for (var subPage : page.children()) {
             if (subPage.title().en().equals("Свойства")) {
                 properties = getPropertiesFromPage(subPage);
-            } else if (subPage.htmlPath().contains("methods")) {
+            } else if (PageSource.normalize(subPage.htmlPath()).contains("methods")) {
                 methods.addAll(getMethodsFromPage(subPage));
             } else if (subPage.title().en().equals("События внешнего соединения")) {
                 externalConnectionModuleEvents = getEventsFromPage(subPage);
@@ -217,7 +221,7 @@ public class HbkTreeParser {
 
     private List<ContextEnumValue> getEnumValuesFromPage(Page page) {
         return page.children().stream()
-            .filter(it -> it.htmlPath().contains("/properties/"))
+            .filter(it -> PageSource.normalize(it.htmlPath()).contains("/properties/"))
             .map(it -> {
                 var description = htmlParser.parseEnumValuePage(it);
                 return new PlatformContextEnumValue(
@@ -340,7 +344,7 @@ public class HbkTreeParser {
         // — generic-плейсхолдеры, заполняемые из конфигурации. Не отбрасываем,
         // а помечаем флагом isGeneric() (см. ContextProperty / ContextNames).
         return page.children().stream()
-            .filter(it -> it.htmlPath().contains("/properties/"))
+            .filter(it -> PageSource.normalize(it.htmlPath()).contains("/properties/"))
             .map(it -> {
 
                 var propertyDescription = htmlParser.parsePropertyPage(it);
@@ -363,7 +367,7 @@ public class HbkTreeParser {
     }
 
     private boolean isCatalogPage(Page page) {
-        var elements = page.htmlPath().split("/");
+        var elements = PageSource.normalize(page.htmlPath()).split("/");
         String endElement;
         if (elements.length > 1) {
             endElement = elements[elements.length - 1];
@@ -376,7 +380,7 @@ public class HbkTreeParser {
 
     private boolean isEnumPage(Page page) {
         // FIXME нужна проверка более точная
-        return page.children().stream().anyMatch(it -> it.htmlPath().contains("/properties/"));
+        return page.children().stream().anyMatch(it -> PageSource.normalize(it.htmlPath()).contains("/properties/"));
     }
 
     private boolean isGlobalContextPage(Page page) {
