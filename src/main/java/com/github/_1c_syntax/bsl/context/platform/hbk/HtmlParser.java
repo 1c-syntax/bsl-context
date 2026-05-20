@@ -132,15 +132,12 @@ public class HtmlParser {
     for (var part : typeLine.toString().split(",")) {
       var trimmed = part.trim();
       // Снимаем хвостовую точку (HBK обычно ставит её в конце последнего типа).
+      // qualifiedName типа НИКОГДА не заканчивается на '.' — даже у generic'ов
+      // имя выглядит как "СправочникСсылка.<Имя справочника>" (заканчивается
+      // на '>'). Поэтому любая '.' на конце — это точка-разделитель из HBK
+      // («Тип: X.»), а не часть имени.
       while (!trimmed.isEmpty() && trimmed.charAt(trimmed.length() - 1) == '.') {
-        var stripped = trimmed.substring(0, trimmed.length() - 1).trim();
-        // НО! qualifiedName generic-типа ВНУТРИ может содержать точку перед
-        // placeholder'ом: "СправочникОбъект.<Имя справочника>". Точка перед
-        // "<…>" — часть имени, её не трогаем.
-        if (stripped.endsWith(">")) {
-          break;
-        }
-        trimmed = stripped;
+        trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
       }
       if (!trimmed.isEmpty()) {
         returnValues.add(trimmed);

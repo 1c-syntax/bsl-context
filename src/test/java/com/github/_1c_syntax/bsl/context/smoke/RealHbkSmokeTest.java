@@ -237,6 +237,19 @@ class RealHbkSmokeTest {
             .anyMatch(n -> n.startsWith("СправочникСсылка.<"))
             .contains("Неопределено");
 
+        // ПустаяСсылка: единственный тип возврата, после `>` идёт хвостовая
+        // точка «Тип: СправочникСсылка.<Имя справочника>.» — flushTypeLine
+        // должен срезать её, иначе rawReturnValues остаётся с лишней точкой
+        // и typeIndex.get(...) не резолвится (returnValues пуст).
+        var emptyRef = managerGeneric.methods().stream()
+            .filter(m -> m.name().getName().equalsIgnoreCase("ПустаяСсылка"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ПустаяСсылка not found on СправочникМенеджер"));
+        assertThat(emptyRef.returnValues())
+            .as("ПустаяСсылка должна возвращать СправочникСсылка.<…> (без хвостовой точки)")
+            .extracting(c -> c.name().getName())
+            .anyMatch(n -> n.startsWith("СправочникСсылка.<"));
+
         // === Constructor parameters ===
         // Массив имеет два конструктора — variadic «По количеству элементов»
         // и единичный «На основании фиксированного массива». Парсер должен
