@@ -197,6 +197,61 @@ class RealHbkSmokeTest {
         assertThat(provider.getContextByName("ФиксированныйМассив").orElseThrow())
             .as("у ФиксированныйМассив страница СП не содержит блока «Элементы коллекции:» — не ContextCollection")
             .isNotInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+
+        // === Generic-методы: возврат должен резолвиться ===
+        // HtmlParser в секции «Возвращаемое значение:» аккумулирует фрагменты
+        // одной строки «Тип: …» (включая <a>-ссылки и угловые скобки в
+        // <span>'ах), и разрезает по запятым только на flush'е. Без этой
+        // склейки «СправочникОбъект.<Имя справочника>» распадался на 4
+        // отдельных returnValue (одни не резолвились), и метод выглядел как
+        // возвращающий только «Неопределено».
+        var refGeneric = provider.getContexts().stream()
+            .filter(c -> c instanceof ContextType)
+            .map(c -> (ContextType) c)
+            .filter(t -> t.name().getName().startsWith("СправочникСсылка.<"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("СправочникСсылка.<…> generic not found"));
+        var getObject = refGeneric.methods().stream()
+            .filter(m -> m.name().getName().equalsIgnoreCase("ПолучитьОбъект"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ПолучитьОбъект method not found"));
+        assertThat(getObject.returnValues())
+            .as("ПолучитьОбъект должен возвращать СправочникОбъект.<…> + Неопределено")
+            .extracting(c -> c.name().getName())
+            .anyMatch(n -> n.startsWith("СправочникОбъект.<"))
+            .contains("Неопределено");
+
+        var managerGeneric = provider.getContexts().stream()
+            .filter(c -> c instanceof ContextType)
+            .map(c -> (ContextType) c)
+            .filter(t -> t.name().getName().startsWith("СправочникМенеджер.<"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("СправочникМенеджер.<…> not found"));
+        var findByCode = managerGeneric.methods().stream()
+            .filter(m -> m.name().getName().equalsIgnoreCase("НайтиПоКоду"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("НайтиПоКоду not found"));
+        assertThat(findByCode.returnValues())
+            .as("НайтиПоКоду должен возвращать СправочникСсылка.<…> + Неопределено")
+            .extracting(c -> c.name().getName())
+            .anyMatch(n -> n.startsWith("СправочникСсылка.<"))
+            .contains("Неопределено");
+
+        // === Constructor parameters ===
+        // Массив имеет два конструктора — variadic «По количеству элементов»
+        // и единичный «На основании фиксированного массива». Парсер должен
+        // отдать ОБА, чтобы LS-side type-aware подбор работал.
+        var arrayType = (ContextType) provider.getContextByName("Массив").orElseThrow();
+        assertThat(arrayType.constructors())
+            .as("у Массив два конструктора (variadic + по фиксированному массиву)")
+            .hasSizeGreaterThanOrEqualTo(2);
+        var paramNames = arrayType.constructors().stream()
+            .flatMap(c -> c.parameters().stream())
+            .map(p -> p.name().getName())
+            .toList();
+        assertThat(paramNames)
+            .as("variadic-параметр сохраняет нотацию X1,...,XN")
+            .anyMatch(n -> n.contains(",...,"));
     }
 
     private static void assertCollection(

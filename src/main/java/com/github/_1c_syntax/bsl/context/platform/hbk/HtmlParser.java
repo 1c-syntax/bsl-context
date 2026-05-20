@@ -116,12 +116,62 @@ public class HtmlParser {
   }
 
   /**
+   * Разбирает аккумулированную строку «Тип: …» из секции
+   * «Возвращаемое значение:» на отдельные имена типов и добавляет их в
+   * {@code returnValues}. Несколько типов разделяются запятой; внутри одного
+   * имени запятых не бывает (точки в qualifiedName типа — это валидный
+   * символ, а угловые скобки {@code <…>} — placeholder generic'а).
+   * Хвостовые точки/пробелы у каждого имени убираются.
+   * <p>
+   * Очищает {@code typeLine} в конце.
+   */
+  private static void flushTypeLine(StringBuilder typeLine, List<String> returnValues) {
+    if (typeLine.length() == 0) {
+      return;
+    }
+    for (var part : typeLine.toString().split(",")) {
+      var trimmed = part.trim();
+      // Снимаем хвостовую точку (HBK обычно ставит её в конце последнего типа).
+      while (!trimmed.isEmpty() && trimmed.charAt(trimmed.length() - 1) == '.') {
+        var stripped = trimmed.substring(0, trimmed.length() - 1).trim();
+        // НО! qualifiedName generic-типа ВНУТРИ может содержать точку перед
+        // placeholder'ом: "СправочникОбъект.<Имя справочника>". Точка перед
+        // "<…>" — часть имени, её не трогаем.
+        if (stripped.endsWith(">")) {
+          break;
+        }
+        trimmed = stripped;
+      }
+      if (!trimmed.isEmpty()) {
+        returnValues.add(trimmed);
+      }
+    }
+    typeLine.setLength(0);
+  }
+
+  /**
    * Ищет «Значение по умолчанию: X.» в описании параметра. Возвращает
    * пустую строку, если не найдено.
    */
   private static String parseDefaultValue(String description) {
     Matcher m = DEFAULT_VALUE_PATTERN.matcher(description);
     return m.find() ? m.group(1).trim() : "";
+  }
+
+  /**
+   * Убирает из описания параметра вхождение «Значение по умолчанию: X.» —
+   * этот блок выносится в отдельное поле {@code defaultValue}, чтобы
+   * потребители не дублировали его в текстовом описании.
+   * <p>
+   * Регексп тот же, что у {@link #DEFAULT_VALUE_PATTERN}, но без захвата
+   * группы значения — здесь нас интересует подстрока целиком (вместе с
+   * префиксом и завершающей точкой) для замены на пустую строку.
+   */
+  private static String stripDefaultValueText(String description) {
+    if (description == null || description.isBlank()) {
+      return description == null ? "" : description;
+    }
+    return DEFAULT_VALUE_PATTERN.matcher(description).replaceAll("").trim();
   }
 
   /**
@@ -580,6 +630,14 @@ public class HtmlParser {
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
 
+    // Аккумулятор для текущей строки типа в "Тип: …". HBK иногда разбивает
+    // имя generic-типа на несколько HTML-узлов: <a>СправочникОбъект.</a>
+    // <span>&lt;</span><a>Имя справочника</a><span>&gt;</span>. Чтобы не
+    // получать на выходе ["СправочникОбъект.", "<", "Имя справочника", ">"],
+    // склеиваем соседние фрагменты в одну строку и разрезаем её только на
+    // запятых (как явных разделителях типов).
+    var currentTypeLine = new StringBuilder();
+
     if (!hasOverloads) {
       // Имя варианта сигнатуры остаётся пустым: значимого имени в HBK у
       // одиночной сигнатуры нет (в HTML не присутствует чаптер
@@ -632,24 +690,44 @@ public class HtmlParser {
       if (returnValuesSection) {
 
         if (node.attr("class").equals("V8SH_chapter")) {
+          flushTypeLine(currentTypeLine, result.returnValues);
+          typeSection = false;
           returnValuesSection = false;
         } else {
 
           if (node instanceof TextNode n && n.text().contains("Тип:")) {
+            // Перед новым "Тип:" — flush'им предыдущий аккумулятор
+            // (на случай, если в одной секции "Возвращаемое значение:"
+            // указано несколько "Тип:" подряд).
+            flushTypeLine(currentTypeLine, result.returnValues);
             typeSection = true;
 
-            if (n.text().contains("Произвольный")) {
-              result.returnValues.add("Произвольный");
+            // Текст после "Тип:" иногда содержит inline-имя — забираем его.
+            var text = n.text();
+            int idx = text.indexOf("Тип:");
+            if (idx >= 0) {
+              var tail = text.substring(idx + "Тип:".length());
+              if (!tail.isBlank()) {
+                currentTypeLine.append(tail);
+              }
             }
 
           } else if (typeSection) {
 
             if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+              // Конец строки типа: flush аккумулятора, выходим из typeSection
+              // (после <br> идёт текстовое описание возврата).
+              flushTypeLine(currentTypeLine, result.returnValues);
               typeSection = false;
             } else if (node instanceof Element n) {
-              result.returnValues.add(n.text());
-            } else if (node instanceof TextNode n && n.text().contains("Произвольный")) {
-              result.returnValues.add("Произвольный");
+              // <a>префикс</a>, <span>&lt;</span>, <a>имя</a>, <span>&gt;</span>
+              // — все эти фрагменты СОБИРАЮТСЯ в одну строку имени типа.
+              currentTypeLine.append(n.text());
+            } else if (node instanceof TextNode n) {
+              // Текст внутри секции — обычно разделитель ", " или " " между
+              // фрагментами. Аккумулируем как есть; flush на запятой
+              // выполняется в самом flushTypeLine через split.
+              currentTypeLine.append(n.text());
             }
 
           } else {
@@ -1056,6 +1134,17 @@ public class HtmlParser {
      */
     public String getDefaultValue() {
       return parseDefaultValue(description);
+    }
+
+    /**
+     * Описание параметра без хвоста «Значение по умолчанию: X.» — этот блок
+     * выносится в отдельное поле {@link #getDefaultValue()} и не должен
+     * дублироваться в текстовом описании, чтобы потребители (hover/completion
+     * LS) не показывали значение дефолта дважды (формально через {@code =}
+     * и снова в текстовом описании).
+     */
+    public String getDescription() {
+      return stripDefaultValueText(description);
     }
 
   }
