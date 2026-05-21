@@ -18,13 +18,36 @@ public class PlatformLanguageKeyword implements ContextLanguageKeyword {
     private final String description;
     @Builder.Default
     private final LanguageKeywordSnippet snippet = LanguageKeywordSnippet.EMPTY;
+    /**
+     * Английское описание ключевого слова. Заполняется в
+     * {@code ShlangParser.parsePages} при наличии парного en-HTML на ту же
+     * страницу (shlang_root.hbk). Пустая строка — en-страница не подгружена
+     * или описание у неё пусто.
+     */
+    @Builder.Default
+    private String descriptionEn = "";
 
     public PlatformLanguageKeyword(ContextName name, LanguageKeywordCategory category,
-                                   String description, LanguageKeywordSnippet snippet) {
+                                   String description, LanguageKeywordSnippet snippet,
+                                   String descriptionEn) {
         this.name = name;
         this.category = category;
         this.description = description;
         this.snippet = snippet == null ? LanguageKeywordSnippet.EMPTY : snippet;
+        this.descriptionEn = descriptionEn == null ? "" : descriptionEn;
+    }
+
+    public PlatformLanguageKeyword(ContextName name, LanguageKeywordCategory category,
+                                   String description, LanguageKeywordSnippet snippet) {
+        this(name, category, description, snippet, "");
+    }
+
+    public String descriptionEn() {
+        return descriptionEn;
+    }
+
+    public void setDescriptionEn(String descriptionEn) {
+        this.descriptionEn = descriptionEn == null ? "" : descriptionEn;
     }
 
     @Override

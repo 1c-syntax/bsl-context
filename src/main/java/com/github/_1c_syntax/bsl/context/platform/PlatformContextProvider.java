@@ -20,6 +20,17 @@ import java.util.stream.Stream;
 public class PlatformContextProvider implements ContextProvider {
     private final PlatformContextStorage storage;
 
+    /**
+     * Английские attachments к контексту, индексированные по идентичности
+     * объекта (record'ы api-классов immutable, поэтому второй язык кладём
+     * здесь). Ключ — сам {@link Context}/{@code ContextMethod}/{@code ContextProperty}/etc.,
+     * значение — {@link EnAttachments} с en-описанием и сопутствующими
+     * текстами, спарсенными из англоязычного HBK через {@link BilingualMerger}.
+     * Если en-HBK не подгружен — карта пуста, и {@link #getEnAttachments(Object)}
+     * вернёт {@link EnAttachments#EMPTY}.
+     */
+    private final java.util.Map<Object, EnAttachments> enAttachments = new java.util.IdentityHashMap<>();
+
     public PlatformContextProvider(PlatformContextStorage storage) {
 
         this.storage = storage;
@@ -112,6 +123,52 @@ public class PlatformContextProvider implements ContextProvider {
     @Override
     public PlatformGlobalContext getGlobalContext() {
       return storage.getGlobalContext();
+    }
+
+    /**
+     * Зарегистрировать английские attachments для контекста. Используется
+     * {@link BilingualMerger} при загрузке shcntx_en.hbk. Для контекстов,
+     * у которых attachments уже зарегистрированы или равны
+     * {@link EnAttachments#EMPTY}, повторно ничего не сохраняет.
+     */
+    public void putEnAttachments(Object context, EnAttachments attachments) {
+        if (context == null || attachments == null || attachments.isEmpty()) {
+            return;
+        }
+        enAttachments.putIfAbsent(context, attachments);
+    }
+
+    /**
+     * Compat shortcut: регистрирует только en-description, остальные
+     * поля {@link EnAttachments} пусты.
+     */
+    public void putDescriptionEn(Object context, String descriptionEn) {
+        if (context == null || descriptionEn == null || descriptionEn.isEmpty()) {
+            return;
+        }
+        enAttachments.putIfAbsent(context, EnAttachments.ofDescription(descriptionEn));
+    }
+
+    /**
+     * Английские attachments для указанного контекста. Возвращает
+     * {@link EnAttachments#EMPTY}, если en-HBK не подгружен или не нашлось
+     * сопоставление при bilingual-merge.
+     *
+     * @param context экземпляр {@link Context}/{@code ContextMethod}/{@code ContextProperty}/
+     *                {@code ContextSignatureParameter}/{@code ContextEnumValue}/
+     *                {@code ContextConstructor}/{@code ContextMethodSignature}/
+     *                {@code ContextCollection}.
+     */
+    public EnAttachments getEnAttachments(Object context) {
+        if (context == null) {
+            return EnAttachments.EMPTY;
+        }
+        return enAttachments.getOrDefault(context, EnAttachments.EMPTY);
+    }
+
+    /** Compat shortcut: только en-description. */
+    public String getDescriptionEn(Object context) {
+        return getEnAttachments(context).description();
     }
 
 }

@@ -162,6 +162,16 @@ public final class ShlangParser {
             if (page != null) {
                 result.add(page);
                 if (page instanceof PlatformLanguageKeyword pageKw) {
+                    // Парный en-HTML той же страницы — извлекаем en-description
+                    // и кладём в PlatformLanguageKeyword.descriptionEn.
+                    var enHtmlForPage = decode(enPages.get(name));
+                    if (enHtmlForPage != null) {
+                        var enDoc = Jsoup.parse(enHtmlForPage);
+                        var enDesc = extractDescription(enDoc);
+                        if (!enDesc.isEmpty()) {
+                            pageKw.setDescriptionEn(enDesc);
+                        }
+                    }
                     publishedByCategory.get(pageKw.category()).add(
                         pageKw.name().getName().toLowerCase(Locale.ROOT));
                     // Body-keywords тащим только из STATEMENT и DECLARATION:
@@ -210,10 +220,24 @@ public final class ShlangParser {
             if (!publishedByCategory.get(category).add(ru.toLowerCase(Locale.ROOT))) {
                 continue;
             }
+            // EN-страница snippet-only keyword'ов чаще всего есть в en-storage
+            // под именем «{basename}.html» (например, operator_await.html). RU
+            // его обычно не содержит — поэтому ru description у нас пустой,
+            // EN тащим из соседней en-страницы, если найдём.
+            var enHtmlBytes = enPages.get(basename + ".html");
+            if (enHtmlBytes == null) enHtmlBytes = enPages.get(basename);
+            var enDesc = "";
+            if (enHtmlBytes != null) {
+                var enHtml = decode(enHtmlBytes);
+                if (enHtml != null) {
+                    enDesc = extractDescription(Jsoup.parse(enHtml));
+                }
+            }
             result.add(PlatformLanguageKeyword.builder()
                 .name(new ContextName(ru, en))
                 .category(category)
                 .description("")
+                .descriptionEn(enDesc)
                 .snippet(snippet)
                 .build());
         }
@@ -333,9 +357,18 @@ public final class ShlangParser {
     static String extractDescription(org.jsoup.nodes.Document doc) {
         for (var p : doc.select("p, P")) {
             var text = p.text();
-            int idx = text.indexOf("Описание:");
-            if (idx >= 0) {
-                var tail = text.substring(idx + "Описание:".length()).trim();
+            // На разных страницах маркер с двоеточием («Описание:», «Description:»)
+            // либо без («Description» — у en-варианта def_Func из шапки <b>Description<br></b>).
+            // Матчим строго ПО НАЧАЛУ параграфа, чтобы не цеплять «Description» как
+            // обычное слово в середине описательного текста.
+            int markerLen = -1;
+            var lc = text.toLowerCase(Locale.ROOT);
+            if (lc.startsWith("описание:")) markerLen = "Описание:".length();
+            else if (lc.startsWith("description:")) markerLen = "Description:".length();
+            else if (lc.startsWith("описание ") || lc.equals("описание")) markerLen = "Описание".length();
+            else if (lc.startsWith("description ") || lc.equals("description")) markerLen = "Description".length();
+            if (markerLen >= 0) {
+                var tail = text.substring(markerLen).trim();
                 if (!tail.isEmpty()) {
                     return tail;
                 }
@@ -346,17 +379,64 @@ public final class ShlangParser {
                 }
             }
         }
-        // Fallback: первый непустой абзац после <H1>.
+        // Fallback: первый непустой абзац после <H1>. Пропускаем содержимое,
+        // совпадающее с заголовком (на некоторых en-страницах, например
+        // def_Func, первый <p> после H1 содержит то же слово «Function» —
+        // это title, а не описание).
         var h1 = doc.selectFirst("h1.V8SH_pagetitle, H1.V8SH_pagetitle");
         if (h1 != null) {
+            var h1Text = h1.text().trim();
+            // Берём ru/en часть отдельно — заголовок вида «Функция (Function)».
+            var h1Tokens = new java.util.HashSet<String>();
+            h1Tokens.add(h1Text.toLowerCase(Locale.ROOT));
+            var matcher = TITLE_BILINGUAL.matcher(h1Text);
+            if (matcher.matches()) {
+                h1Tokens.add(matcher.group(1).trim().toLowerCase(Locale.ROOT));
+                h1Tokens.add(matcher.group(2).trim().toLowerCase(Locale.ROOT));
+            }
             for (Element sibling = h1.nextElementSibling(); sibling != null; sibling = sibling.nextElementSibling()) {
                 var t = sibling.text().trim();
-                if (!t.isEmpty()) {
-                    return t;
-                }
+                if (t.isEmpty()) continue;
+                if (h1Tokens.contains(t.toLowerCase(Locale.ROOT))) continue;
+                // Шапки СП-секций — не описание. Если на странице только они
+                // (как у en-варианта def_Func), пусть descriptionEn останется
+                // пустым — LS отрисует ru-вариант через BilingualString-фоллбэк.
+                if (isSectionHeader(t)) continue;
+                // Однословные/короткие куски — это не описание, а атрибут
+                // синтаксиса (например, у en-страницы def_Func между шапками
+                // встречается просто «Async»). Описание — всегда фраза.
+                if (t.length() < 20 || !t.contains(" ")) continue;
+                return t;
             }
         }
         return "";
+    }
+
+    /**
+     * Шапки секций СП-страницы (двуязычные). Если параграф ровно равен одной
+     * из них — это не описание, а заголовок следующего блока, который
+     * нужно пропустить при поиске первого осмысленного абзаца после H1.
+     * Сравнение регистронезависимое, по trimmed-тексту.
+     */
+    private static final java.util.Set<String> SECTION_HEADERS = java.util.Set.of(
+        "синтаксис:", "syntax:",
+        "параметры:", "parameters:",
+        "возвращаемое значение:", "returned value:", "return value:",
+        "пример:", "example:",
+        "примечание:", "note:", "notes:",
+        "см. также:", "see also:",
+        "доступность:", "availability:",
+        "описание варианта метода:", "method variant description:",
+        "вариант синтаксиса:", "syntax variant:"
+    );
+
+    private static boolean isSectionHeader(String text) {
+        var lc = text.toLowerCase(Locale.ROOT).trim();
+        if (SECTION_HEADERS.contains(lc)) return true;
+        for (var h : SECTION_HEADERS) {
+            if (lc.startsWith(h)) return true;
+        }
+        return false;
     }
 
     /**
@@ -481,10 +561,15 @@ public final class ShlangParser {
                 continue;
             }
             var en = i < enTokens.size() ? enTokens.get(i) : "";
+            var parentEn = parent.name().getAlias();
+            var enDesc = parentEn == null || parentEn.isBlank()
+                ? ""
+                : "Part of \"" + parentEn + "\" construct";
             sink.add(PlatformLanguageKeyword.builder()
                 .name(new ContextName(ru, en))
                 .category(parent.category())
                 .description("Часть конструкции «" + parent.name().getName() + "»")
+                .descriptionEn(enDesc)
                 .snippet(LanguageKeywordSnippet.EMPTY)
                 .build());
         }
@@ -541,6 +626,7 @@ public final class ShlangParser {
                 .name(new ContextName(ru, en))
                 .category(LanguageKeywordCategory.OPERATOR)
                 .description("Логическая операция")
+                .descriptionEn("Logical operation")
                 .snippet(LanguageKeywordSnippet.EMPTY)
                 .build());
         }

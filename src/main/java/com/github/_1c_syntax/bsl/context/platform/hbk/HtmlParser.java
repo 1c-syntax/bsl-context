@@ -33,6 +33,42 @@ public class HtmlParser {
   private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("Значение по умолчанию:\\n?\\s*([^.\\n]+?)\\.");
 
   /**
+   * Маркеры обязательности параметра в {@code (...)} после имени.
+   * ru: «Обязательный»/«Необязательный»; en: «required»/«optional».
+   * Проверяется case-insensitive.
+   */
+  private static boolean isRequiredMarker(String marker) {
+    if (marker == null) return false;
+    var m = marker.trim();
+    return m.equalsIgnoreCase("Обязательный") || m.equalsIgnoreCase("Required");
+  }
+
+  /** Содержит ли текст маркер «Тип:» (ru) или «Type:» (en) — case-sensitive по факту HBK. */
+  private static boolean containsTypeMarker(String text) {
+    return text != null && (text.contains("Тип:") || text.contains("Type:"));
+  }
+
+  /** Индекс первого вхождения маркера «Тип:»/«Type:»; -1 если нет. */
+  private static int indexOfTypeMarker(String text) {
+    if (text == null) return -1;
+    int idx = text.indexOf("Тип:");
+    if (idx >= 0) return idx;
+    return text.indexOf("Type:");
+  }
+
+  /** Длина маркера «Тип:» или «Type:» на позиции idx в тексте (для substring(idx + len)). */
+  private static int typeMarkerLength(String text, int idx) {
+    return text.startsWith("Тип:", idx) ? "Тип:".length() : "Type:".length();
+  }
+
+  /** «Произвольный» (ru) / «Arbitrary» (en) — placeholder для composite-types. */
+  private static boolean containsArbitraryType(String text) {
+    return text != null && (text.contains("Произвольный") || text.contains("Arbitrary"));
+  }
+
+  private static final String ARBITRARY_TYPE_NAME = "Произвольный";
+
+  /**
    * Создаёт парсер на источнике страниц (in-memory или файловая система).
    * Двуязычная поддержка реализуется внешним мерджером
    * ({@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}),
@@ -254,7 +290,8 @@ public class HtmlParser {
     }
     var document = pageSource.parse(page.htmlPath());
     for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
-      if ("Описание:".equals(chapter.text().trim())) {
+      var t = chapter.text().trim();
+      if ("Описание:".equals(t) || "Description:".equals(t)) {
         var next = chapter.nextElementSibling();
         if (next != null) {
           return next.text().trim();
@@ -323,7 +360,8 @@ public class HtmlParser {
     }
     var document = pageSource.parse(page.htmlPath());
     for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
-      if (!"Элементы коллекции:".equals(chapter.text().trim())) {
+      var t = chapter.text().trim();
+      if (!"Элементы коллекции:".equals(t) && !"Collection elements:".equals(t)) {
         continue;
       }
       return parseCollectionBlock(chapter);
@@ -387,10 +425,12 @@ public class HtmlParser {
     for (int i = startIdx; i < fragments.size(); i++) {
       var frag = fragments.get(i);
       if (frag.isEmpty()) continue;
-      if (frag.contains("Для каждого")) {
+      if (frag.contains("Для каждого") || frag.contains("For each")) {
         supportsForEach = true;
         forEachDesc = stripBoilerplate(frag);
-      } else if (frag.contains("[...]") || frag.contains("оператора [")) {
+      } else if (frag.contains("[...]")
+          || frag.contains("оператора [")
+          || frag.contains("operator [")) {
         supportsIndex = true;
         indexDesc = stripBoilerplate(frag);
       }
@@ -480,7 +520,9 @@ public class HtmlParser {
       }
 
       if (node.attr("class").equals("V8SH_chapter") && node instanceof Element n) {
-        descriptionSection = n.text().contains("Описание:") || n.text().contains("Примечание:");
+        var t = n.text();
+        descriptionSection = t.contains("Описание:") || t.contains("Примечание:")
+            || t.contains("Description:");
       }
     }
 
@@ -519,10 +561,10 @@ public class HtmlParser {
 
       if (descriptionSection) {
 
-        if (node instanceof TextNode n && n.text().contains("Тип:")) {
+        if (node instanceof TextNode n && containsTypeMarker(n.text())) {
           typeSection = true;
 
-          if (n.text().contains("Произвольный")) {
+          if (containsArbitraryType(n.text())) {
             result.types.add("Произвольный");
           }
 
@@ -532,7 +574,7 @@ public class HtmlParser {
             typeSection = false;
           } else if (node instanceof Element n) {
             result.types.add(n.text());
-          } else if (node instanceof TextNode n && n.text().contains("Произвольный")) {
+          } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
             result.types.add("Произвольный");
           }
 
@@ -589,11 +631,13 @@ public class HtmlParser {
       if (node.attr("class").equals("V8SH_chapter")
               && node instanceof Element n) {
 
-        accessModeSection = n.text().contains("Использование:");
-        descriptionSection = n.text().contains("Описание:") || n.text().contains("Примечание:");
-        availabilitySection = n.text().contains("Доступность:");
+        var t = n.text();
+        accessModeSection = t.contains("Использование:") || t.contains("Usage:");
+        descriptionSection = t.contains("Описание:") || t.contains("Примечание:")
+            || t.contains("Description:");
+        availabilitySection = t.contains("Доступность:") || t.contains("Availability:");
 
-        if (n.text().contains("Примечание:")) {
+        if (t.contains("Примечание:")) {
           result.description = result.description.concat("\n");
         }
 
@@ -692,18 +736,18 @@ public class HtmlParser {
           returnValuesSection = false;
         } else {
 
-          if (node instanceof TextNode n && n.text().contains("Тип:")) {
+          if (node instanceof TextNode n && containsTypeMarker(n.text())) {
             // Перед новым "Тип:" — flush'им предыдущий аккумулятор
             // (на случай, если в одной секции "Возвращаемое значение:"
             // указано несколько "Тип:" подряд).
             flushTypeLine(currentTypeLine, result.returnValues);
             typeSection = true;
 
-            // Текст после "Тип:" иногда содержит inline-имя — забираем его.
+            // Текст после «Тип:»/«Type:» иногда содержит inline-имя — забираем его.
             var text = n.text();
-            int idx = text.indexOf("Тип:");
+            int idx = indexOfTypeMarker(text);
             if (idx >= 0) {
-              var tail = text.substring(idx + "Тип:".length());
+              var tail = text.substring(idx + typeMarkerLength(text, idx));
               if (!tail.isBlank()) {
                 currentTypeLine.append(tail);
               }
@@ -789,8 +833,7 @@ public class HtmlParser {
 
           if (match.find()) { // Параметр метода
             currentMethodSignatureParameterDescription.name = buildParameterName(match);
-            currentMethodSignatureParameterDescription.isRequired = match.group(3)
-                    .equalsIgnoreCase("Обязательный");
+            currentMethodSignatureParameterDescription.isRequired = isRequiredMarker(match.group(3));
           } else { // Параметр события — без суффикса (обязательный)
             currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
             currentMethodSignatureParameterDescription.isRequired = true;
@@ -798,10 +841,10 @@ public class HtmlParser {
 
         } else {
 
-          if (node instanceof TextNode n && n.text().contains("Тип:")) {
+          if (node instanceof TextNode n && containsTypeMarker(n.text())) {
             typeSection = true;
 
-            if (n.text().contains("Произвольный")) {
+            if (containsArbitraryType(n.text())) {
               currentMethodSignatureParameterDescription.types.add("Произвольный");
             }
 
@@ -811,7 +854,7 @@ public class HtmlParser {
               typeSection = false;
             } else if (node instanceof Element n) {
               currentMethodSignatureParameterDescription.types.add(n.text());
-            } else if (node instanceof TextNode n && n.text().contains("Произвольный")) {
+            } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
               currentMethodSignatureParameterDescription.types.add("Произвольный");
             }
 
@@ -889,17 +932,24 @@ public class HtmlParser {
       if (node.attr("class").equals("V8SH_chapter")
               && node instanceof Element n) {
 
-        descriptionSection = n.text().contains("Описание:") || n.text().contains("Примечание:");
-        availabilitySection = n.text().contains("Доступность:");
-        parametersSection = n.text().contains("Параметры:");
-        methodSignatureDescriptionSection = n.text().contains("Описание варианта метода:");
-        returnValuesSection = n.text().contains("Возвращаемое значение:");
-        syntaxSection = "Синтаксис:".equals(n.text().trim());
-        exampleSection = "Пример:".equals(n.text().trim());
-        seeAlsoSection = "См. также:".equals(n.text().trim());
-        notesSection = "Замечание:".equals(n.text().trim());
+        // Заголовки чаптеров на ru/en. en-варианты сверены по реальному
+        // shcntx_root.hbk (V8SH_chapter-метки) — см. en-смок-тест.
+        var t = n.text();
+        var tt = t.trim();
+        descriptionSection = t.contains("Описание:") || t.contains("Примечание:")
+            || t.contains("Description:");
+        availabilitySection = t.contains("Доступность:") || t.contains("Availability:");
+        parametersSection = t.contains("Параметры:") || t.contains("Parameters:");
+        methodSignatureDescriptionSection = t.contains("Описание варианта метода:")
+            || t.contains("Description of method variant:");
+        returnValuesSection = t.contains("Возвращаемое значение:")
+            || t.contains("Returned value:");
+        syntaxSection = "Синтаксис:".equals(tt) || "Syntax:".equals(tt);
+        exampleSection = "Пример:".equals(tt) || "Example:".equals(tt);
+        seeAlsoSection = "См. также:".equals(tt) || "See also:".equals(tt);
+        notesSection = "Замечание:".equals(tt) || "Note:".equals(tt);
 
-        if (n.text().contains("Вариант синтаксиса:")) {
+        if (t.contains("Вариант синтаксиса:") || t.contains("Syntax variant:")) {
 
           if (currentMethodSignatureParameterDescription != null) {
             currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
@@ -973,9 +1023,9 @@ public class HtmlParser {
         isSyntax = false;
 
         switch (n.text().trim()) {
-          case "Параметры:" -> isParameters = true;
-          case "Описание:" -> isDescription = true;
-          case "Синтаксис:" -> isSyntax = true;
+          case "Параметры:", "Parameters:" -> isParameters = true;
+          case "Описание:", "Description:" -> isDescription = true;
+          case "Синтаксис:", "Syntax:" -> isSyntax = true;
         }
         continue;
       }
@@ -1007,8 +1057,7 @@ public class HtmlParser {
 
           if (match.find()) { // Параметр конструктора
             currentMethodSignatureParameterDescription.name = buildParameterName(match);
-            currentMethodSignatureParameterDescription.isRequired = match.group(3)
-              .equalsIgnoreCase("Обязательный");
+            currentMethodSignatureParameterDescription.isRequired = isRequiredMarker(match.group(3));
           } else { // конструктор без явного суффикса обязательности
             currentMethodSignatureParameterDescription.name = stripAngleBrackets(n.text());
             currentMethodSignatureParameterDescription.isRequired = true;
@@ -1016,10 +1065,10 @@ public class HtmlParser {
 
         } else {
 
-          if (node instanceof TextNode n && n.text().contains("Тип:")) {
+          if (node instanceof TextNode n && containsTypeMarker(n.text())) {
             isTypeSection = true;
 
-            if (n.text().contains("Произвольный")) {
+            if (containsArbitraryType(n.text())) {
               currentMethodSignatureParameterDescription.types.add("Произвольный");
             }
 
@@ -1029,7 +1078,7 @@ public class HtmlParser {
               isTypeSection = false;
             } else if (node instanceof Element n) {
               currentMethodSignatureParameterDescription.types.add(n.text());
-            } else if (node instanceof TextNode n && n.text().contains("Произвольный")) {
+            } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
               currentMethodSignatureParameterDescription.types.add("Произвольный");
             }
 

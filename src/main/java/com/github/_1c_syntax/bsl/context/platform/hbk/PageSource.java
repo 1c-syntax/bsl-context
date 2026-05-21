@@ -26,11 +26,46 @@ public interface PageSource {
 
     /**
      * Удобная обёртка: разбирает HTML-страницу через jsoup.
+     * <p>
+     * Перед парсингом эскейпит «голые» плейсхолдер-теги вида
+     * {@code <TheNumberOfElements1>}, которые HBK-генератор оставляет
+     * незакрытыми в en-страницах (на ru это написано кириллицей —
+     * {@code <КоличествоЭлементовN>}, и jsoup кириллицу за tag-name не
+     * принимает, поэтому ru ломалось бы наоборот — мы прячем оба случая).
+     * Без эскейпа jsoup пытается интерпретировать их как HTML-теги и валит
+     * последующий контент внутрь несуществующего «элемента».
      */
     default Document parse(String relativePath) throws IOException {
         try (var in = open(relativePath)) {
-            return Jsoup.parse(in, StandardCharsets.UTF_8.name(), "");
+            var raw = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            return Jsoup.parse(escapeBarePlaceholders(raw), "");
         }
+    }
+
+    /**
+     * Эскейпит «голые» {@code <}-перед-placeholder'ом в HBK-страницах.
+     * HBK-генератор пишет placeholder-имена сырыми тегами вида
+     * {@code <TheNumberOfElementsN>} или с непарным escape'ом
+     * ({@code &lt;TheNumberOfElements1>}, {@code <TheNumberOfElementsN&gt;}) —
+     * jsoup в html-mode интерпретирует это как открывающий tag и валит
+     * последующий DOM. Чтобы избежать этого, любой {@code <Word…}, где
+     * Word начинается с заглавной латинской буквы (длиной ≥3) и
+     * непосредственно за ним идёт не-tag-char ({@code >}, {@code &} от
+     * {@code &gt;}, либо пробел/конец) — заменяем {@code <} на {@code &lt;}.
+     * <p>
+     * Кириллические placeholder'ы ({@code <КоличествоЭлементовN>}) jsoup
+     * за tag-name не принимает (требует ASCII), поэтому их трогать не надо.
+     */
+    static String escapeBarePlaceholders(String html) {
+        // Имя — CamelCase: заглавная, затем хотя бы одна строчная, затем
+        // хотя бы одна заглавная и хвост из букв/цифр/_. Так HTML-теги
+        // (DIV, TBODY, FONT, SPAN, HTML, HEAD, BODY, META, STYLE, TABLE и т.п. —
+        // все из заглавных букв) не зацепятся.
+        // После имени допускаем `>` (raw closing), `&` (escaped &gt;),
+        // пробел или конец слова.
+        var pattern = java.util.regex.Pattern.compile(
+            "<(/?[A-Z][a-z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*)(?=[>&\\s])");
+        return pattern.matcher(html).replaceAll("&lt;$1");
     }
 
     /**
