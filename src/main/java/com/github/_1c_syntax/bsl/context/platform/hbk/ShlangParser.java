@@ -199,8 +199,8 @@ public final class ShlangParser {
                 continue;
             }
             var basename = name.substring(0, name.length() - 3);
-            if (pages.containsKey(basename)) {
-                continue; // обработали через HTML-страницу
+            if (pages.containsKey(basename) || pages.containsKey(basename + ".html")) {
+                continue; // обработали через HTML-страницу (с расширением или без)
             }
             if (!isLanguageItemPage(basename + ".__")) {
                 // basename без .st должен подходить под фильтр префиксов.
@@ -293,20 +293,24 @@ public final class ShlangParser {
             return null;
         }
         var description = extractDescription(doc);
+        // Часть страниц в FileStorage имеет суффикс .html (operator_await.html),
+        // у других страниц расширения нет (def_Func, def_Proc). Для lookup'а
+        // парного .st-сниппета и для categoryFor() используем basename без .html.
+        var baseKey = basename.endsWith(".html") ? basename.substring(0, basename.length() - 5) : basename;
 
-        if (PRIMITIVE_BASENAMES.contains(basename)) {
+        if (PRIMITIVE_BASENAMES.contains(baseKey)) {
             // Примитивные типы из shlang — публикуем как PrimitivePlaceholderType,
             // kind=PRIMITIVE_TYPE, методов/свойств/событий нет, но description
             // тащим из СП (раньше хардкод-классы возвращали только имя).
             return new PrimitivePlaceholderType(name, description);
         }
 
-        var category = categoryFor(basename);
+        var category = categoryFor(baseKey);
         return PlatformLanguageKeyword.builder()
             .name(name)
             .category(category)
             .description(description)
-            .snippet(readSnippetBilingual(pages.get(basename + ".st")))
+            .snippet(readSnippetBilingual(pages.get(baseKey + ".st")))
             .build();
     }
 
@@ -338,16 +342,38 @@ public final class ShlangParser {
         var raw = h1.text().replace(' ', ' ').trim();
         var matcher = TITLE_BILINGUAL.matcher(raw);
         if (matcher.matches()) {
-            return new ContextName(matcher.group(1).trim(), matcher.group(2).trim());
+            var ru = stripCategoryPrefix(matcher.group(1).trim());
+            var en = stripCategoryPrefix(matcher.group(2).trim());
+            return new ContextName(ru, en);
         }
         // Если скобки есть, но содержимое — не латинский алиас (например,
         // «[...] (обращение к свойствам объекта)»), отбрасываем хвост:
         // имя заканчивается перед открывающей скобкой.
         var paren = raw.indexOf('(');
         if (paren > 0) {
-            return new ContextName(raw.substring(0, paren).trim(), "");
+            return new ContextName(stripCategoryPrefix(raw.substring(0, paren).trim()), "");
         }
-        return new ContextName(raw, "");
+        return new ContextName(stripCategoryPrefix(raw), "");
+    }
+
+    /**
+     * На страницах вида {@code operator_*.html} заголовок выглядит как
+     * «Оператор Ждать (Await)»/«Statement If…» — слова «Оператор», «Operator»,
+     * «Statement» — это категория секции СП, а не часть имени keyword'а.
+     * Имя самого ключевого слова — {@code Ждать}/{@code Await}. Также
+     * совпадает с тем, что выдаётся из snippet-only flow (где парсится
+     * {@code .st}-файл), поэтому записи дедуплицируются.
+     */
+    private static final java.util.List<String> CATEGORY_PREFIXES = java.util.List.of(
+        "Оператор ", "Operator ",
+        "Statement ", "Конструкция "
+    );
+
+    private static String stripCategoryPrefix(String s) {
+        for (var p : CATEGORY_PREFIXES) {
+            if (s.startsWith(p)) return s.substring(p.length()).trim();
+        }
+        return s;
     }
 
     /**
@@ -552,45 +578,169 @@ public final class ShlangParser {
                                                    PlatformLanguageKeyword parent,
                                                    java.util.Set<String> publishedNames,
                                                    List<Context> sink) {
-        var ruTokens = collectBodyTokens(html, parent.name().getName());
-        var enTokens = enHtml == null ? List.<String>of()
-            : collectBodyTokens(enHtml, parent.name().getAlias());
-        for (int i = 0; i < ruTokens.size(); i++) {
-            var ru = ruTokens.get(i);
-            if (!publishedNames.add(ru.toLowerCase(Locale.ROOT))) {
-                continue;
-            }
-            var en = i < enTokens.size() ? enTokens.get(i) : "";
+        var ruPairs = collectBodyDescriptions(html, parent.name().getName());
+        var enPairs = enHtml == null ? List.<TokenDescription>of()
+            : collectBodyDescriptions(enHtml, parent.name().getAlias());
+        for (int i = 0; i < ruPairs.size(); i++) {
+            var rp = ruPairs.get(i);
+            var ru = rp.token();
+            var ep = i < enPairs.size() ? enPairs.get(i) : null;
+            var en = ep != null ? ep.token() : "";
+            var parentRu = parent.name().getName();
             var parentEn = parent.name().getAlias();
-            var enDesc = parentEn == null || parentEn.isBlank()
-                ? ""
-                : "Part of \"" + parentEn + "\" construct";
-            sink.add(PlatformLanguageKeyword.builder()
-                .name(new ContextName(ru, en))
-                .category(parent.category())
-                .description("Часть конструкции «" + parent.name().getName() + "»")
-                .descriptionEn(enDesc)
-                .snippet(LanguageKeywordSnippet.EMPTY)
-                .build());
+            // Если keyword уже опубликован на другой родительской странице —
+            // обогащаем существующую запись описанием под ключ {@code parentRu}.
+            // Иначе создаём новый и кладём первое описание под этот же ключ.
+            PlatformLanguageKeyword target = null;
+            if (!publishedNames.add(ru.toLowerCase(Locale.ROOT))) {
+                for (var c : sink) {
+                    if (c instanceof PlatformLanguageKeyword pk
+                        && pk.category() == parent.category()
+                        && pk.name().getName().equalsIgnoreCase(ru)) {
+                        target = pk;
+                        break;
+                    }
+                }
+            }
+            if (target == null) {
+                // Generic-описание остаётся для случая, когда контекст вызова
+                // неизвестен: LS пытается выбрать конкретное по parent'у,
+                // если не находит — показывает это.
+                var genericRu = parentRu == null || parentRu.isBlank()
+                    ? "" : "Часть конструкции «" + parentRu + "»";
+                var genericEn = parentEn == null || parentEn.isBlank()
+                    ? "" : "Part of \"" + parentEn + "\" construct";
+                target = PlatformLanguageKeyword.builder()
+                    .name(new ContextName(ru, en))
+                    .category(parent.category())
+                    .description(genericRu)
+                    .descriptionEn(genericEn)
+                    .snippet(LanguageKeywordSnippet.EMPTY)
+                    .build();
+                sink.add(target);
+            }
+            // Per-parent описания.
+            if (!rp.description().isEmpty()) {
+                target.putDescriptionForParent(parentRu, rp.description());
+            }
+            if (ep != null && !ep.description().isEmpty()) {
+                target.putDescriptionForParentEn(parentRu, ep.description());
+            }
         }
     }
 
-    private static List<String> collectBodyTokens(String html, String parentName) {
+    /**
+     * Извлекает body-keyword'ы родительской страницы вместе с их описаниями.
+     * <p>
+     * На странице вида {@code def_Func} body-keyword'ы перечислены как
+     * {@code <u>X</u>} с описанием либо в том же {@code <p>} после
+     * {@code </u>} через {@code <br>}, либо в следующем {@code <p>}.
+     * Плейсхолдеры синтаксиса ({@code <Имя_функции>}, {@code <Параметр1>…})
+     * и комментарии-описания секций ({@code // Объявления…}) отбрасываются —
+     * это не самостоятельные keyword'ы.
+     */
+    private static List<TokenDescription> collectBodyDescriptions(String html, String parentName) {
         var doc = Jsoup.parse(html);
         var single = Pattern.compile("^\\p{L}[\\p{L}\\p{N}]*$", Pattern.UNICODE_CHARACTER_CLASS);
-        var selectors = "strong.ControlElement, STRONG.ControlElement, u, U";
-        var seen = new java.util.LinkedHashSet<String>();
-        for (var el : doc.select(selectors)) {
-            var raw = el.text().trim();
-            if (raw.isEmpty() || !single.matcher(raw).matches()) {
+        var seen = new java.util.LinkedHashMap<String, TokenDescription>();
+        // На def_Func/def_Proc body-keyword'ы выделены тегом <u>X</u> в секции
+        // «Параметры:» — каждый в своём <p>, под ним описание. <strong class="ControlElement">
+        // присутствует и в шапке "Syntax:" в одном <p> с несколькими тегами —
+        // их брать не нужно (там нет описаний). Поэтому ограничиваемся <u>.
+        // Для struct_*-страниц (Если/Попытка/Цикл) body-keywords тоже выделены
+        // <u>, так что одного селектора достаточно.
+        for (var tag : doc.select("u, U")) {
+            var rawText = tag.text().trim().replace(' ', ' ');
+            if (rawText.isEmpty()) {
                 continue;
             }
-            if (parentName != null && raw.equalsIgnoreCase(parentName)) {
+            // Если в теге несколько токенов (например, «Возврат <Возвращаемое значение>»
+            // или «Return <Return value>»), keyword — это первое слово; остальное —
+            // placeholder параметра. Берём первый Cyrillic/Latin токен.
+            boolean wasSingle = single.matcher(rawText).matches();
+            String raw = wasSingle ? rawText : extractLeadingWord(rawText);
+            if (raw == null || raw.isEmpty() || !single.matcher(raw).matches()) {
                 continue;
             }
-            seen.add(raw);
+            // Фильтр «не дублировать родителя» применяем только если в теге
+            // ОДНО слово — равное имени родителя. Случай вроде
+            // {@code <u><Procedure name></u>}, где после extractLeadingWord
+            // получается "Procedure", совпадающий с parentName en="Procedure", —
+            // это синтаксический placeholder, не сам родитель; такой токен
+            // создаёт keyword «Имя/Procedure», участвующий в общем матчинге
+            // ru/en по позиции (иначе indices ru/en расходятся и Возврат
+            // получает en-alias соседнего токена).
+            if (wasSingle && parentName != null && raw.equalsIgnoreCase(parentName)) {
+                continue;
+            }
+            // Найти ближайший <p>-предок и в нём текст после tag-а
+            String desc = "";
+            org.jsoup.nodes.Element p = tag.parent();
+            while (p != null && !"p".equalsIgnoreCase(p.tagName())) {
+                p = p.parent();
+            }
+            if (p != null) {
+                var all = p.text();
+                var pos = all.indexOf(raw);
+                if (pos >= 0) {
+                    desc = all.substring(pos + raw.length()).trim();
+                }
+                if (desc.isEmpty()) {
+                    var next = p.nextElementSibling();
+                    if (next != null && "p".equalsIgnoreCase(next.tagName())) {
+                        desc = next.text().trim();
+                    }
+                }
+                // Очищаем leading placeholder вида «<Возвращаемое значение>» или
+                // «=<DefaultValue>» — это синтаксический «хвост» token-а, а не
+                // описание. После trim'а описание начинается с реального текста.
+                desc = stripLeadingPlaceholders(desc);
+            }
+            // Если уже встречали — оставляем НЕ-ПУСТОЕ описание (первый
+            // встреченный тег может быть в шапке без описания, реальное
+            // описание идёт ниже в секции «Параметры:»).
+            var existing = seen.get(raw);
+            if (existing == null || existing.description().isEmpty()) {
+                seen.put(raw, new TokenDescription(raw, desc));
+            }
         }
-        return new ArrayList<>(seen);
+        return new java.util.ArrayList<>(seen.values());
+    }
+
+    private record TokenDescription(String token, String description) {}
+
+    /**
+     * Возвращает первое слово (последовательность Unicode-букв/цифр) до пробела,
+     * угловой скобки или другого разделителя. Используется для multi-word
+     * содержимого {@code <u>}-тегов вида {@code «Возврат <Возвращаемое значение>»} —
+     * сам keyword здесь {@code «Возврат»}, остальное — синтаксический placeholder.
+     */
+    /**
+     * Очищает в начале строки повторяющиеся placeholder-«хвосты» вида
+     * {@code <Имя>} / {@code =<Имя>}, оставшиеся после извлечения keyword'а
+     * из multi-word тега (например, после {@code <u>Возврат <Возвращаемое
+     * значение></u>} описание начиналось с {@code «<Возвращаемое значение> …»}).
+     */
+    private static String stripLeadingPlaceholders(String s) {
+        var result = s.trim();
+        while (result.startsWith("=<") || result.startsWith("<")) {
+            int gt = result.indexOf('>');
+            if (gt < 0) break;
+            result = result.substring(gt + 1).trim();
+        }
+        return result;
+    }
+
+    private static String extractLeadingWord(String text) {
+        int i = 0;
+        while (i < text.length() && !Character.isLetter(text.charAt(i))) i++;
+        int start = i;
+        while (i < text.length()) {
+            var c = text.charAt(i);
+            if (!Character.isLetterOrDigit(c)) break;
+            i++;
+        }
+        return i > start ? text.substring(start, i) : null;
     }
 
     /**
@@ -675,50 +825,51 @@ public final class ShlangParser {
      * Поэтому {@link java.util.zip.ZipFile} не открывается («zip END header
      * not found»). А у части записей в {@code shlang_*.hbk} в local header
      * compressed/uncompressed size расходится с фактическим, поэтому
-     * {@link java.util.zip.ZipInputStream} падает с {@code invalid entry
-     * size}. Простейшее устойчивое решение — раскодировать каждый record
-     * вручную через {@link java.util.zip.Inflater}, опираясь на длину
-     * файла и сигнатуру {@code 0x04034b50}.
+     * последовательный {@link java.util.zip.ZipInputStream} (и обычный
+     * pos+=csize обход) после такой записи попадает в середину следующего
+     * header'а и теряет хвост FileStorage. Например, в shlang_ru.hbk
+     * {@code operator_await.html} (страница «Ждать») лежит на смещении 58516
+     * — линейный парсер не доходит до неё и описание оператора теряется.
+     * <p>
+     * Решение — сканировать data на сигнатуры {@code 0x04034b50}
+     * (PK\x03\x04) и пытаться прочесть каждый встреченный local header
+     * независимо. Записи с некорректным header'ом отбрасываются, корректные
+     * сохраняются. Этот brute-force подход устойчив к битым промежуточным
+     * записям.
      */
     private static Map<String, byte[]> readZip(byte[] data) {
         var pages = new HashMap<String, byte[]>();
         var charset = Charset.forName("windows-1251");
-        var pos = 0;
-        while (pos + 30 <= data.length) {
-            var sig = readU32LE(data, pos);
-            if (sig != 0x04034b50) {
-                // Конец последовательности (например, central directory или мусорный хвост).
-                break;
+        for (int pos = 0; pos + 30 <= data.length; pos++) {
+            if (readU32LE(data, pos) != 0x04034b50L) {
+                continue;
             }
-            var gpFlag = readU16LE(data, pos + 6);
-            var method = readU16LE(data, pos + 8);
-            var compressedSize = (int) readU32LE(data, pos + 18);
-            var uncompressedSize = (int) readU32LE(data, pos + 22);
-            var nameLen = readU16LE(data, pos + 26);
-            var extraLen = readU16LE(data, pos + 28);
-
-            var name = new String(data, pos + 30, nameLen, charset);
-            var dataStart = pos + 30 + nameLen + extraLen;
-
-            // Если установлен bit 3 GP-флага — sizes лежат в data descriptor
-            // после данных (формат: optional sig 0x08074b50, CRC, csize, usize).
-            // В обнаруженных shlang HBK эта ветка не встречалась, для надёжности
-            // оставляем fallback ниже.
-            byte[] uncompressed;
-            if ((gpFlag & 0x08) != 0 && compressedSize == 0) {
-                throw new RuntimeException(
-                    "Streaming data descriptor in shlang FileStorage is not supported (entry " + name + ")");
+            try {
+                var nameLen = readU16LE(data, pos + 26);
+                var extraLen = readU16LE(data, pos + 28);
+                if (pos + 30 + nameLen + extraLen > data.length) continue;
+                var name = new String(data, pos + 30, nameLen, charset);
+                var compressedSize = (int) readU32LE(data, pos + 18);
+                var uncompressedSize = (int) readU32LE(data, pos + 22);
+                var method = readU16LE(data, pos + 8);
+                var gpFlag = readU16LE(data, pos + 6);
+                int dataStart = pos + 30 + nameLen + extraLen;
+                if (dataStart + compressedSize > data.length) continue;
+                if ((gpFlag & 0x08) != 0 && compressedSize == 0) continue; // streaming descriptor — пропускаем
+                byte[] uncompressed;
+                if (method == 0) {
+                    uncompressed = java.util.Arrays.copyOfRange(data, dataStart, dataStart + compressedSize);
+                } else if (method == 8) {
+                    uncompressed = inflate(data, dataStart, compressedSize, Math.max(uncompressedSize, 256));
+                } else {
+                    continue;
+                }
+                // Не перезаписываем существующую запись (на случай ложного срабатывания
+                // сигнатуры внутри сжатых данных — первая встреченная обычно корректная).
+                pages.putIfAbsent(name, uncompressed);
+            } catch (Exception ex) {
+                // битый header или inflate — пропускаем, ищем следующую PK-сигнатуру
             }
-            if (method == 0) {
-                uncompressed = java.util.Arrays.copyOfRange(data, dataStart, dataStart + compressedSize);
-            } else if (method == 8) {
-                uncompressed = inflate(data, dataStart, compressedSize, Math.max(uncompressedSize, 256));
-            } else {
-                throw new RuntimeException(
-                    "Unsupported compression method " + method + " in shlang FileStorage (entry " + name + ")");
-            }
-            pages.put(name, uncompressed);
-            pos = dataStart + compressedSize;
         }
         return pages;
     }
