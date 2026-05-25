@@ -336,6 +336,7 @@ public class HbkTreeParser {
             .isRequired(paramDesc.isRequired())
             .rawTypes(paramDesc.getTypes())
             .defaultValue(paramDesc.getDefaultValue())
+            .variadic(paramDesc.isVariadic())
             .build();
     }
 

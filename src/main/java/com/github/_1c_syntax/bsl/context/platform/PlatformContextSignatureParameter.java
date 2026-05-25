@@ -21,6 +21,8 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   private final String description;
   @lombok.Builder.Default
   private final String defaultValue = "";
+  @lombok.Builder.Default
+  private final boolean variadic = false;
 
   private final List<String> rawTypes;
 
@@ -54,6 +56,11 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   @Override
   public String defaultValue() {
     return defaultValue;
+  }
+
+  @Override
+  public boolean isVariadic() {
+    return variadic;
   }
 
   protected void processRawTypes(java.util.Map<String, Context> typeIndex) {

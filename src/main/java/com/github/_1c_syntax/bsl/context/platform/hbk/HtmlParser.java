@@ -152,6 +152,91 @@ public class HtmlParser {
   }
 
   /**
+   * Имя-диапазон вида {@code Значение1-Значение10}: база + число, дефис,
+   * (опц. база) + число. group1 = база1, group2 = число1, group3 = база2
+   * (может быть пустой), group4 = число2.
+   */
+  private static final Pattern VARIADIC_RANGE_PATTERN =
+      Pattern.compile("^(.+?)(\\d+)\\s*-\\s*(.*?)(\\d+)$");
+
+  /**
+   * Помечает вариадик-параметры флагом {@code variadic} и приводит их имя к
+   * единственной базе (без номера/маркера), которую потребитель (LS) нумерует
+   * по фактическим аргументам ({@code Значение} → {@code Значение1},
+   * {@code Значение2}, …).
+   * <p>
+   * Синтакс-помощник кодирует вариадик тремя способами:
+   * <ul>
+   *   <li>явно {@code <Имя1>,...,<ИмяN>} ({@link #buildParameterName} даёт
+   *       имя {@code Имя1,...,ИмяN}) — например {@code Макс}/{@code Мин};</li>
+   *   <li>диапазоном в имени {@code <Значение1-Значение10>} — например
+   *       {@code СтрШаблон};</li>
+   *   <li>множественным именем последнего опционального параметра
+   *       {@code <Значения>}/{@code <Values>} — конструкторы Структуры,
+   *       ФиксированнойСтруктуры.</li>
+   * </ul>
+   */
+  private static void applyVariadicMarkers(List<MethodSignatureParameterDescription> params) {
+    if (params.isEmpty()) {
+      return;
+    }
+    for (var p : params) {
+      if (p.name == null) {
+        continue;
+      }
+      var raw = p.name.trim();
+      if (raw.contains(",...,") || VARIADIC_RANGE_PATTERN.matcher(raw).matches()) {
+        p.variadic = true;
+        p.name = variadicBase(raw);
+      }
+    }
+    var last = params.get(params.size() - 1);
+    if (!last.variadic && !last.isRequired && last.name != null
+        && isVariadicValuesName(last.name)) {
+      last.variadic = true;
+      last.name = singularizeValuesName(last.name.trim());
+    }
+  }
+
+  /**
+   * База вариадик-имени — префикс до первой цифры, очищенный от хвостовых
+   * не-буквенных символов. {@code Значение1,...,ЗначениеN} → {@code Значение},
+   * {@code Значение1-Значение10} → {@code Значение},
+   * {@code КоличествоЭлементов1,...,N} → {@code КоличествоЭлементов}.
+   */
+  private static String variadicBase(String name) {
+    int i = 0;
+    while (i < name.length() && !Character.isDigit(name.charAt(i))) {
+      i++;
+    }
+    var base = (i > 0 ? name.substring(0, i) : name).trim();
+    while (!base.isEmpty() && !Character.isLetter(base.charAt(base.length() - 1))) {
+      base = base.substring(0, base.length() - 1);
+    }
+    return base.isEmpty() ? name : base;
+  }
+
+  /**
+   * Множественное имя «значений» — платформенная конвенция для вариадик-хвоста
+   * конструкторов Структуры/ФиксированнойСтруктуры.
+   */
+  private static boolean isVariadicValuesName(String name) {
+    var n = name.trim();
+    return n.equalsIgnoreCase("Значения") || n.equalsIgnoreCase("Values");
+  }
+
+  /** Сингуляризация известных множественных имён для нумерации вариадик-хвоста. */
+  private static String singularizeValuesName(String name) {
+    if (name.equalsIgnoreCase("Значения")) {
+      return "Значение";
+    }
+    if (name.equalsIgnoreCase("Values")) {
+      return "Value";
+    }
+    return name;
+  }
+
+  /**
    * Разбирает аккумулированную строку «Тип: …» из секции
    * «Возвращаемое значение:» на отдельные имена типов и добавляет их в
    * {@code returnValues}. Несколько типов разделяются запятой; внутри одного
@@ -957,6 +1042,7 @@ public class HtmlParser {
           }
 
           if (currentMethodSignatureDescription != null) {
+            applyVariadicMarkers(currentMethodSignatureDescription.parameters);
             result.signatures.add(currentMethodSignatureDescription);
           }
 
@@ -978,6 +1064,7 @@ public class HtmlParser {
     }
 
     if (currentMethodSignatureDescription != null) {
+      applyVariadicMarkers(currentMethodSignatureDescription.parameters);
       result.signatures.add(currentMethodSignatureDescription);
     }
 
@@ -1096,6 +1183,8 @@ public class HtmlParser {
       result.parameters.add(currentMethodSignatureParameterDescription);
     }
 
+    applyVariadicMarkers(result.parameters);
+
     return result;
   }
 
@@ -1168,6 +1257,7 @@ public class HtmlParser {
     private String name = "";
     private String description = "";
     private boolean isRequired = false;
+    private boolean variadic = false;
     private final List<String> types = new ArrayList<>();
 
     private MethodSignatureParameterDescription() {

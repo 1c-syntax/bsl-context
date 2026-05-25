@@ -221,11 +221,44 @@ class HtmlParserTest {
         assertThat(ctor)
             .hasFieldOrPropertyWithValue("name", "По размерам");
         assertThat(ctor.getParameters()).hasSize(1);
-        // Вариадик-форма `<X1>,...,<XN>` теперь корректно разбирается на «X1,...,XN».
+        // Вариадик-форма `<X1>,...,<XN>` помечается флагом variadic, имя приводится
+        // к чистой базе «Размер» (потребитель нумерует по фактическим аргументам).
         assertThat(ctor.getParameters().get(0))
-            .hasFieldOrPropertyWithValue("name", "Размер1,...,РазмерN")
+            .hasFieldOrPropertyWithValue("name", "Размер")
+            .hasFieldOrPropertyWithValue("variadic", true)
             .hasFieldOrPropertyWithValue("isRequired", false)
             .hasFieldOrPropertyWithValue("types", List.of("Число"));
+    }
+
+    @Test
+    void parseConstructorPage_VariadicRange() throws URISyntaxException {
+        // Имя-диапазон `<Значение1-Значение10>` (форма СтрШаблон) → флаг variadic,
+        // имя приводится к базе «Значение».
+        var ctor = parseConstructorPage("constructors/ctor_variadic_range");
+        assertThat(ctor.getParameters()).hasSize(2);
+        assertThat(ctor.getParameters().get(0))
+            .hasFieldOrPropertyWithValue("name", "Шаблон")
+            .hasFieldOrPropertyWithValue("variadic", false)
+            .hasFieldOrPropertyWithValue("isRequired", true);
+        assertThat(ctor.getParameters().get(1))
+            .hasFieldOrPropertyWithValue("name", "Значение")
+            .hasFieldOrPropertyWithValue("variadic", true)
+            .hasFieldOrPropertyWithValue("isRequired", false);
+    }
+
+    @Test
+    void parseConstructorPage_VariadicPlural() throws URISyntaxException {
+        // Множественное имя последнего опц. параметра `<Значения>` (конструктор
+        // Структуры) → флаг variadic, сингуляризация в базу «Значение».
+        var ctor = parseConstructorPage("constructors/ctor_variadic_plural");
+        assertThat(ctor.getParameters()).hasSize(2);
+        assertThat(ctor.getParameters().get(0))
+            .hasFieldOrPropertyWithValue("name", "Ключи")
+            .hasFieldOrPropertyWithValue("variadic", false);
+        assertThat(ctor.getParameters().get(1))
+            .hasFieldOrPropertyWithValue("name", "Значение")
+            .hasFieldOrPropertyWithValue("variadic", true)
+            .hasFieldOrPropertyWithValue("isRequired", false);
     }
 
     // --- helpers ---
