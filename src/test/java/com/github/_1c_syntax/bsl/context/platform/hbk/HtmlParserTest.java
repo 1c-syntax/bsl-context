@@ -163,6 +163,33 @@ class HtmlParserTest {
     }
 
     @Test
+    void parseMethodPage_RecommendedReplacementsQualifiedByOwnerFromHref() throws URISyntaxException {
+        // Текст <a> несёт только имя члена, владелец — в href. По индексу путей
+        // владелец резолвится в локализованное имя: "МенеджерОбработкиОшибок.…".
+        var parser = newParser();
+        parser.setPageIndex(java.util.Map.of(
+            "objects/cat/ErrorProcessingManager.html",
+            new DoubleLanguageString("ErrorProcessingManager", "МенеджерОбработкиОшибок")));
+        var method = parser.parseMethodPage(page("/methods/method_recommended_qualified.html"));
+        assertThat(method.getRecommendedReplacements())
+            .containsExactly("МенеджерОбработкиОшибок.ПодробноеПредставлениеОшибки");
+    }
+
+    @Test
+    void parseMethodPage_SeeAlsoPairsOwnerAndMember() throws URISyntaxException {
+        // Пара <a>Владелец</a>, метод <a>Член</a>: владелец-ссылка не дублируется.
+        // Для глобального контекста префикс владельца опускается (метод доступен
+        // по голому имени), standalone-тип отдаётся как есть.
+        var parser = newParser();
+        parser.setPageIndex(java.util.Map.of(
+            "objects/cat/GlobalContext.html",
+            new DoubleLanguageString("Global context", "Глобальный контекст")));
+        var method = parser.parseMethodPage(page("/methods/method_seealso_qualified.html"));
+        assertThat(method.getSeeAlso())
+            .containsExactly("НачатьПомещениеФайлов", "ПростоТип");
+    }
+
+    @Test
     void parseMethodPage_Deprecated() throws URISyntaxException {
         var method = parseMethodPage("methods/method_deprecated");
         // Несколько <p class="V8SH_versionInfo"> на странице: «Доступен…» и «Не рекомендуется…».

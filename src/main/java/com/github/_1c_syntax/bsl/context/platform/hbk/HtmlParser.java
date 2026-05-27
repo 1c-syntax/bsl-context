@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform.hbk;
 
+import com.github.eightm.lib.DoubleLanguageString;
 import com.github.eightm.lib.Page;
 import lombok.Getter;
 import lombok.SneakyThrows;
@@ -13,12 +14,31 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class HtmlParser {
 
   private final PageSource pageSource;
+
+  /**
+   * Индекс {@code нормализованный htmlPath → двуязычный заголовок страницы}.
+   * Заполняется {@link HbkTreeParser} из дерева оглавления перед обходом и
+   * используется для квалификации ссылок в секциях «Рекомендуется использовать»
+   * и «См. также»: имя владельца члена извлекается из {@code href} ссылки
+   * (текст {@code <a>} содержит только имя члена). Пустой индекс (например,
+   * при прямом создании парсера в тестах) → ссылки остаются неквалифицированными.
+   */
+  private Map<String, DoubleLanguageString> pageIndex = Collections.emptyMap();
+
+  /** Устанавливает индекс страниц для квалификации ссылок (см. {@link #pageIndex}). */
+  void setPageIndex(Map<String, DoubleLanguageString> pageIndex) {
+    this.pageIndex = pageIndex == null ? Collections.emptyMap() : pageIndex;
+  }
+
+  /** Маркеры member-страниц в пути htmlPath: член принадлежит типу-владельцу. */
+  private static final String[] MEMBER_MARKERS = {"/methods/", "/properties/", "/events/", "/operators/"};
   /**
    * Распознаёт оба формата имени параметра в синтакс-помощнике:
    * <ul>
@@ -316,7 +336,7 @@ public class HtmlParser {
    * подсказка, что использовать вместо устаревшего элемента. Возвращает
    * пустой список, если блока нет либо в нём нет {@code <a>}-ссылок.
    */
-  private static List<String> findRecommendedReplacements(org.jsoup.nodes.Document document) {
+  private List<String> findRecommendedReplacements(org.jsoup.nodes.Document document) {
     var blocks = document.select("div.__DEPRECATED_SHOW_STYLE__");
     if (blocks.isEmpty()) {
       return Collections.emptyList();
@@ -326,11 +346,83 @@ public class HtmlParser {
       for (var anchor : block.select("a")) {
         var text = anchor.text().trim();
         if (!text.isBlank()) {
-          result.add(text);
+          result.add(qualifyReference(anchor.attr("href"), text));
         }
       }
     }
     return result;
+  }
+
+  /**
+   * Превращает {@code href} страницы синтакс-помощника в нормализованный путь
+   * (как в {@code htmlPath} дерева), либо {@code null}, если ссылка не ведёт на
+   * страницу СП (например, {@code "#"} или внешний URL).
+   */
+  private static String hrefToPath(String href) {
+    if (href == null) {
+      return null;
+    }
+    var marker = "SyntaxHelperContext/";
+    var i = href.indexOf(marker);
+    if (i < 0) {
+      return null;
+    }
+    return PageSource.normalize(href.substring(i + marker.length()));
+  }
+
+  /** Индекс первого member-маркера ({@link #MEMBER_MARKERS}) в пути; {@code -1}, если нет. */
+  private static int memberMarkerIndex(String path) {
+    var min = -1;
+    for (var marker : MEMBER_MARKERS) {
+      var idx = path.indexOf(marker);
+      if (idx >= 0 && (min < 0 || idx < min)) {
+        min = idx;
+      }
+    }
+    return min;
+  }
+
+  /**
+   * Квалифицирует ссылку секций «Рекомендуется»/«См. также» в имя
+   * {@code Владелец.Член}. Имя члена — текст ссылки {@code linkText} (он уже на
+   * языке страницы), владелец берётся из {@link #pageIndex} по {@code href}.
+   * Язык владельца выбирается по совпадению {@code linkText} с заголовком
+   * member-страницы (по умолчанию ru). Если ссылка не ведёт на member-страницу
+   * либо владелец не найден в индексе — возвращается исходный {@code linkText}
+   * (без регрессии при пустом индексе).
+   */
+  private String qualifyReference(String href, String linkText) {
+    var path = hrefToPath(href);
+    if (path == null) {
+      return linkText;
+    }
+    var markerIdx = memberMarkerIndex(path);
+    if (markerIdx < 0) {
+      return linkText;
+    }
+    var owner = pageIndex.get(path.substring(0, markerIdx) + ".html");
+    if (owner == null) {
+      return linkText;
+    }
+    if (isGlobalContext(owner)) {
+      // У глобального контекста нет фактического владельца — метод/свойство
+      // доступны по голому имени, префикс не нужен.
+      return linkText;
+    }
+    var member = pageIndex.get(path);
+    var useEn = member != null
+        && linkText.equals(member.en())
+        && !linkText.equals(member.ru());
+    var ownerName = useEn ? owner.en() : owner.ru();
+    if (ownerName == null || ownerName.isBlank()) {
+      return linkText;
+    }
+    return ownerName + "." + linkText;
+  }
+
+  /** Владелец — глобальный контекст (en-заголовок {@code Global context}). */
+  private static boolean isGlobalContext(DoubleLanguageString owner) {
+    return "Global context".equals(owner.en()) || "Глобальный контекст".equals(owner.ru());
   }
 
   /**
@@ -757,6 +849,13 @@ public class HtmlParser {
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
 
+    // Ссылка «См. также» кодируется парой <a>: владелец (type-ссылка) + член
+    // (ссылка с member-маркером). Член уже несёт владельца через href, поэтому
+    // предшествующую type-ссылку того же владельца не дублируем. Standalone
+    // type-ссылку (без следующего члена) отдаём как имя типа.
+    String pendingSeeAlsoText = null;
+    String pendingSeeAlsoPath = null;
+
     // Аккумулятор для текущей строки типа в "Тип: …". HBK иногда разбивает
     // имя generic-типа на несколько HTML-узлов: <a>СправочникОбъект.</a>
     // <span>&lt;</span><a>Имя справочника</a><span>&gt;</span>. Чтобы не
@@ -887,11 +986,37 @@ public class HtmlParser {
 
       if (seeAlsoSection) {
         if (node.attr("class").equals("V8SH_chapter")) {
+          if (pendingSeeAlsoText != null) {
+            result.seeAlso.add(pendingSeeAlsoText);
+            pendingSeeAlsoText = null;
+            pendingSeeAlsoPath = null;
+          }
           seeAlsoSection = false;
         } else if (node instanceof Element n && "a".equalsIgnoreCase(n.tag().getName())) {
+          var href = n.attr("href");
           var text = n.text().trim();
           if (!text.isBlank()) {
-            result.seeAlso.add(text);
+            var path = hrefToPath(href);
+            var markerIdx = path == null ? -1 : memberMarkerIndex(path);
+            if (markerIdx >= 0) {
+              var ownerPath = path.substring(0, markerIdx) + ".html";
+              if (ownerPath.equals(pendingSeeAlsoPath)) {
+                // pending type-ссылка — владелец этого члена, не дублируем.
+                pendingSeeAlsoText = null;
+                pendingSeeAlsoPath = null;
+              } else if (pendingSeeAlsoText != null) {
+                result.seeAlso.add(pendingSeeAlsoText);
+                pendingSeeAlsoText = null;
+                pendingSeeAlsoPath = null;
+              }
+              result.seeAlso.add(qualifyReference(href, text));
+            } else {
+              if (pendingSeeAlsoText != null) {
+                result.seeAlso.add(pendingSeeAlsoText);
+              }
+              pendingSeeAlsoText = text;
+              pendingSeeAlsoPath = path;
+            }
           }
         }
       }

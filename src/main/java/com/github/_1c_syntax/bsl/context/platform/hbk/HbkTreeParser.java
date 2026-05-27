@@ -23,13 +23,16 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParame
 import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
 import com.github._1c_syntax.bsl.context.platform.primitive.ArbitraryType;
+import com.github.eightm.lib.DoubleLanguageString;
 import com.github.eightm.lib.Page;
 import com.github.eightm.lib.TableOfContent;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -89,9 +92,30 @@ public class HbkTreeParser {
         contexts.add(new ArbitraryType());
         contexts.addAll(extra);
 
+        // Индекс путей страниц нужен HtmlParser'у для квалификации ссылок в
+        // секциях «Рекомендуется»/«См. также» (имя владельца — из href).
+        var pageIndex = new HashMap<String, DoubleLanguageString>();
+        indexPages(tree.getPages(), pageIndex);
+        htmlParser.setPageIndex(pageIndex);
+
         visitPagesFromTree(tree.getPages());
 
         return contexts;
+    }
+
+    /**
+     * Рекурсивно собирает индекс {@code нормализованный htmlPath → заголовок}
+     * по всему дереву страниц. {@code putIfAbsent} — первый-побеждает при
+     * коллизии путей (как и в основном обходе).
+     */
+    private static void indexPages(List<Page> pages, Map<String, DoubleLanguageString> index) {
+        for (var page : pages) {
+            var htmlPath = page.htmlPath();
+            if (htmlPath != null && !htmlPath.isEmpty()) {
+                index.putIfAbsent(PageSource.normalize(htmlPath), page.title());
+            }
+            indexPages(page.children(), index);
+        }
     }
 
     public void visitPagesFromTree(List<Page> pages) {
