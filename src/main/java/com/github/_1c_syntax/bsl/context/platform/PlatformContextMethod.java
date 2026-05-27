@@ -31,6 +31,8 @@ public class PlatformContextMethod implements ContextMethod {
     private final List<String> seeAlso = List.of();
     @lombok.Builder.Default
     private final List<String> recommendedReplacements = List.of();
+    @lombok.Builder.Default
+    private final boolean async = false;
 
     private final List<String> rawReturnValues;
 
@@ -97,6 +99,11 @@ public class PlatformContextMethod implements ContextMethod {
     @Override
     public List<String> recommendedReplacements() {
         return List.copyOf(recommendedReplacements);
+    }
+
+    @Override
+    public boolean isAsync() {
+        return async;
     }
 
     @Override

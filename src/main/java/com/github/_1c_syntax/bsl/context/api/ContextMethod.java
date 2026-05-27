@@ -101,4 +101,12 @@ public interface ContextMethod {
         return List.of();
     }
 
+    /**
+     * Асинхронный метод платформы (await-стиль, 8.3.18+): имя имеет суффикс
+     * {@code Асинх} / {@code Async} и вызывается через {@code Ждать}.
+     */
+    default boolean isAsync() {
+        return false;
+    }
+
 }

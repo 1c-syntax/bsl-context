@@ -254,6 +254,7 @@ public class HbkTreeParser {
                     .examples(List.copyOf(methodDescription.getExamples()))
                     .seeAlso(List.copyOf(methodDescription.getSeeAlso()))
                     .recommendedReplacements(List.copyOf(methodDescription.getRecommendedReplacements()))
+                    .async(isAsyncName(it.title().ru(), it.title().en()))
                     .build();
 
             })
@@ -310,6 +311,15 @@ public class HbkTreeParser {
             .filter(Optional::isPresent)
             .map(Optional::get)
             .toList();
+    }
+
+    /**
+     * Async-метод платформы определяется по суффиксу имени: {@code Асинх} (ru)
+     * или {@code Async} (en). Это конвенция await-методов 8.3.18+; callback-методы
+     * ({@code Начать…} / {@code Begin…}) суффикса не имеют.
+     */
+    private static boolean isAsyncName(String ru, String en) {
+        return ru != null && ru.endsWith("Асинх") || en != null && en.endsWith("Async");
     }
 
     private static List<ContextMethodSignature> buildSignatures(
