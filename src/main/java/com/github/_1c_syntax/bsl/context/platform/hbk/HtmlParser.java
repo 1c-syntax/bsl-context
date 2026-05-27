@@ -752,6 +752,7 @@ public class HtmlParser {
     var exampleSection = false;
     var seeAlsoSection = false;
     var notesSection = false;
+    var descriptionSeen = false;
 
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
@@ -895,14 +896,6 @@ public class HtmlParser {
         }
       }
 
-      if (notesSection) {
-        if (node.attr("class").equals("V8SH_chapter")) {
-          notesSection = false;
-        } else {
-          result.notes = result.notes.concat(getDescription(node));
-        }
-      }
-
       if (parametersSection) {
 
         if (node.attr("class").equals("V8SH_rubric")
@@ -1021,8 +1014,13 @@ public class HtmlParser {
         // shcntx_root.hbk (V8SH_chapter-метки) — см. en-смок-тест.
         var t = n.text();
         var tt = t.trim();
-        descriptionSection = t.contains("Описание:") || t.contains("Примечание:")
-            || t.contains("Description:");
+        var isDescriptionHeader = t.contains("Описание:") || t.contains("Description:");
+        var isNote = t.contains("Примечание:");
+        descriptionSeen = descriptionSeen || isDescriptionHeader;
+        // «Примечание:» — это заметка (пара к en «Note:»), если на странице уже
+        // встретилось «Описание:»; иначе «Примечание:» выступает самим описанием
+        // (поля регистров и отдельные методы без отдельного «Описание:»).
+        descriptionSection = isDescriptionHeader || (isNote && !descriptionSeen);
         availabilitySection = t.contains("Доступность:") || t.contains("Availability:");
         parametersSection = t.contains("Параметры:") || t.contains("Parameters:");
         methodSignatureDescriptionSection = t.contains("Описание варианта метода:")
@@ -1032,7 +1030,7 @@ public class HtmlParser {
         syntaxSection = "Синтаксис:".equals(tt) || "Syntax:".equals(tt);
         exampleSection = "Пример:".equals(tt) || "Example:".equals(tt);
         seeAlsoSection = "См. также:".equals(tt) || "See also:".equals(tt);
-        notesSection = "Замечание:".equals(tt) || "Note:".equals(tt);
+        notesSection = "Замечание:".equals(tt) || "Note:".equals(tt) || (isNote && descriptionSeen);
 
         if (t.contains("Вариант синтаксиса:") || t.contains("Syntax variant:")) {
 

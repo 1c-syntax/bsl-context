@@ -148,6 +148,21 @@ class HtmlParserTest {
     }
 
     @Test
+    void parseMethodPage_PrimechanieAfterDescriptionGoesToNotes() throws URISyntaxException {
+        // Реальный HBK: ru-заметка лежит под «Примечание:» (пара к en «Note:»),
+        // при этом на странице есть отдельная «Описание:». «Примечание:» должно
+        // попасть в notes, а не в описание; ссылка <a>Неопределено</a> внутри
+        // заметки не должна задваиваться.
+        var method = parseMethodPage("methods/method_with_note_primechanie");
+        assertThat(method.getDescription())
+            .contains("Описание для теста")
+            .doesNotContain("Неопределено");
+        assertThat(method.getNotes())
+            .contains("Если", "Неопределено", "пустая строка")
+            .doesNotContain("НеопределеноНеопределено");
+    }
+
+    @Test
     void parseMethodPage_Deprecated() throws URISyntaxException {
         var method = parseMethodPage("methods/method_deprecated");
         // Несколько <p class="V8SH_versionInfo"> на странице: «Доступен…» и «Не рекомендуется…».
