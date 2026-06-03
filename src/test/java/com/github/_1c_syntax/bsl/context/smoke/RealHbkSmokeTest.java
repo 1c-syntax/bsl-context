@@ -198,6 +198,22 @@ class RealHbkSmokeTest {
             .as("у ФиксированныйМассив страница СП не содержит блока «Элементы коллекции:» — не ContextCollection")
             .isNotInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
 
+        // === ContextEnum.valueType ===
+        // Для enum-«библиотек» на главной странице есть фраза
+        // «Значения этого набора имеют тип X.» — парсер должен извлечь имя X
+        // в ContextEnum.valueType(). Проверяем ru-маркер на самой известной
+        // (БиблиотекаКартинок → Картинка) + соседние стилевые наборы.
+        assertEnumValueType(provider, "БиблиотекаКартинок", "Картинка", "Picture");
+        assertEnumValueType(provider, "ЦветаСтиля", "Цвет", "Color");
+        assertEnumValueType(provider, "РамкиСтиля", "Рамка", "Border");
+        assertEnumValueType(provider, "ШрифтыСтиля", "Шрифт", "Font");
+        // Обычное системное перечисление valueType иметь не должно.
+        var sysEnum = provider.getContextByName("ВидДвиженияНакопления").orElse(null);
+        assertThat(sysEnum).isInstanceOf(ContextEnum.class);
+        assertThat(((ContextEnum) sysEnum).valueType())
+            .as("у обычного системного перечисления нет valueType")
+            .isEmpty();
+
         // === Generic-методы: возврат должен резолвиться ===
         // HtmlParser в секции «Возвращаемое значение:» аккумулирует фрагменты
         // одной строки «Тип: …» (включая <a>-ссылки и угловые скобки в
@@ -283,6 +299,28 @@ class RealHbkSmokeTest {
         body.accept((com.github._1c_syntax.bsl.context.api.ContextCollection) ctx);
     }
 
+
+    private static void assertEnumValueType(
+        com.github._1c_syntax.bsl.context.api.ContextProvider provider,
+        String enumName,
+        String expectedRu,
+        String expectedEn
+    ) {
+        var ctx = provider.getContextByName(enumName).orElseThrow(() ->
+            new AssertionError("enum not found: " + enumName));
+        assertThat(ctx)
+            .as("%s должен быть ContextEnum", enumName)
+            .isInstanceOf(ContextEnum.class);
+        var vt = ((ContextEnum) ctx).valueType();
+        assertThat(vt)
+            .as("%s.valueType() должен быть распознан со страницы", enumName)
+            .isPresent();
+        var n = vt.orElseThrow();
+        assertThat(n.getName()).as("%s.valueType().ru", enumName).isEqualTo(expectedRu);
+        assertThat(n.getAlias())
+            .as("%s.valueType().en — должен резолвиться через bindBilingualValueType", enumName)
+            .isEqualTo(expectedEn);
+    }
 
     private static void assertResolves(
         com.github._1c_syntax.bsl.context.api.ContextProvider provider,

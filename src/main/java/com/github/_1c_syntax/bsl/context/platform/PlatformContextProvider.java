@@ -41,6 +41,14 @@ public class PlatformContextProvider implements ContextProvider {
         // Только ContextType / ContextEnum — другие как тип не появляются.
         var typeIndex = buildTypeIndex(contexts);
 
+        // Достраиваем en-сторону valueType у enum-«библиотек»: HBK-парсер видит
+        // маркер на ru-странице («Значения этого набора имеют тип X.»), но имя
+        // X на этой стадии безязычное. Здесь по индексу резолвим en-alias.
+        contexts.stream()
+            .filter(c -> c instanceof PlatformContextEnum)
+            .map(c -> (PlatformContextEnum) c)
+            .forEach(e -> e.bindBilingualValueType(typeIndex));
+
         contexts.stream()
                 .parallel()
                 .filter(context -> context instanceof PlatformContextType

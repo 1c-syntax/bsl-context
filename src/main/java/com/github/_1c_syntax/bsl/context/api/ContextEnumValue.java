@@ -40,4 +40,15 @@ public interface ContextEnumValue {
     default List<String> recommendedReplacements() {
         return List.of();
     }
+
+    /**
+     * Признак placeholder-template'а: имя значения содержит маркер вида
+     * {@code <Имя картинки>} / {@code <Имя элемента стиля>} и подлежит
+     * материализации из конфигурации (БиблиотекаКартинок.&lt;Имя картинки&gt; →
+     * CommonPicture'ы, РамкиСтиля.&lt;Имя элемента стиля&gt; → Border'ы из Style,
+     * и т.п.). Структурно — есть ли placeholder в bsl-context-разобранном имени.
+     */
+    default boolean isGeneric() {
+        return ContextNames.isGeneric(name());
+    }
 }

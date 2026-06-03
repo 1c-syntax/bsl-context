@@ -236,11 +236,20 @@ public class HbkTreeParser {
 
     private void visitEnumPage(Page page) {
         var properties = getEnumValuesFromPage(page);
-        var type = PlatformContextEnum.builder()
+        var pageDesc = htmlParser.parseEnumPage(page);
+        var rawValueType = pageDesc.getValueType();
+        // valueType хранится в индексе типов через ContextName с пустым en;
+        // если en-маркер на странице будет добавлен — расширить здесь.
+        ContextName valueType = (rawValueType == null || rawValueType.isBlank())
+            ? null
+            : new ContextName(rawValueType, "");
+        var builder = PlatformContextEnum.builder()
             .name(new ContextName(page.title().ru(), page.title().en()))
-            .values(properties)
-            .build();
-        contexts.add(type);
+            .values(properties);
+        if (valueType != null) {
+            builder.valueType(valueType);
+        }
+        contexts.add(builder.build());
     }
 
     private List<ContextEnumValue> getEnumValuesFromPage(Page page) {
@@ -390,6 +399,7 @@ public class HbkTreeParser {
                     .name(new ContextName(it.title().ru(), it.title().en()))
                     .accessMode(accessMode.orElse(AccessMode.READ_WRITE))
                     .rawTypes(propertyDescription.getTypes())
+                    .rawCollectionElementTypes(propertyDescription.getRawCollectionElementTypes())
                     .description(propertyDescription.getDescription())
                     .availabilities(mapAvailabilities(propertyDescription.getAvailabilities()))
                     .sinceVersion(propertyDescription.getSinceVersion())

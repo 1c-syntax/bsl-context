@@ -89,6 +89,35 @@ public class HtmlParser {
   private static final String ARBITRARY_TYPE_NAME = "Произвольный";
 
   /**
+   * Маркер блока «Элементами коллекции являются объекты типа …» (ru) /
+   * «Items of this collection are objects of … type» (en) в описании свойства.
+   * Следующий после маркера {@code <a>} содержит имя типа-элемента коллекции,
+   * на которую указывает свойство (per-property element-type, в отличие от
+   * {@link com.github._1c_syntax.bsl.context.api.ContextCollection#collectionElementTypes()}
+   * на самом типе-коллекции).
+   */
+  private static boolean containsCollectionElementMarker(String text) {
+    return text != null
+      && (text.contains("Элементами коллекции являются объекты типа")
+        || text.contains("Items of this collection are objects of"));
+  }
+
+  /**
+   * Маркер главной страницы enum-«библиотеки» (БиблиотекаКартинок,
+   * БиблиотекаСтилей, ЦветаСтиля, …): «Значения этого набора имеют тип X»
+   * — задаёт общий тип всех значений набора (см.
+   * {@link com.github._1c_syntax.bsl.context.api.ContextEnum#valueType()}).
+   * Следующий после маркера {@code <a>} содержит имя типа.
+   * EN-вариант на синтакс-помощнике встречается формулировкой
+   * «Values of this set have the type X».
+   */
+  private static boolean containsEnumValueTypeMarker(String text) {
+    return text != null
+      && (text.contains("Значения этого набора имеют тип")
+        || text.contains("Values of this set have the type"));
+  }
+
+  /**
    * Создаёт парсер на источнике страниц (in-memory или файловая система).
    * Двуязычная поддержка реализуется внешним мерджером
    * ({@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}),
@@ -665,6 +694,39 @@ public class HtmlParser {
   }
 
   /**
+   * Разбирает главную страницу enum-«библиотеки» — извлекает общий тип
+   * значений из фразы {@code Значения этого набора имеют тип X.}.
+   * См. {@link com.github._1c_syntax.bsl.context.api.ContextEnum#valueType()}.
+   * Для «обычных» системных перечислений ({@code ВидДвиженияНакопления}
+   * и т.п.) такой фразы на странице нет — поле {@code valueType} остаётся
+   * пустой строкой.
+   * <p>
+   * Поиск ведётся по полному тексту страницы регулярным выражением, а не по
+   * DOM-структуре с {@code V8SH_chapter}-секциями: маркер встречается внутри
+   * абзаца описания, где разметка непоследовательная между разными HBK-страницами.
+   */
+  @SneakyThrows
+  protected EnumDescription parseEnumPage(Page page) {
+    final var document = pageSource.parse(page.htmlPath());
+    var result = new EnumDescription();
+    var bodyText = document.body().text();
+    var m = ENUM_VALUE_TYPE_PATTERN.matcher(bodyText);
+    if (m.find()) {
+      result.valueType = m.group(1).trim();
+    }
+    return result;
+  }
+
+  /**
+   * «Значения этого набора имеют тип X.» (ru) /
+   * «The values of this set have the type X.» (en).
+   * Группа 1 — имя типа. Точная EN-формулировка взята с страницы
+   * {@code PictureLib} реального {@code shcntx_root.hbk}.
+   */
+  private static final Pattern ENUM_VALUE_TYPE_PATTERN = Pattern.compile(
+    "(?:Значения этого набора имеют тип|The values of this set have the type)\\s+([^.\\n]+?)\\.");
+
+  /**
    * Разбирает страницу значения перечисления (например,
    * {@code РежимВиджета/properties/Active1.html}). Структура простая:
    * заголовок + чаптер {@code Описание:} + version-info.
@@ -717,6 +779,7 @@ public class HtmlParser {
     var accessModeSection = false;
     var descriptionSection = false;
     var typeSection = false;
+    var collectionElementSection = false;
     var availabilitySection = false;
 
     for (Node node : document.body().childNodes()) {
@@ -755,6 +818,15 @@ public class HtmlParser {
             result.types.add("Произвольный");
           }
 
+        } else if (node instanceof TextNode n && containsCollectionElementMarker(n.text())) {
+          collectionElementSection = true;
+        } else if (collectionElementSection) {
+          if (node instanceof Element n && !n.tag().equals(Tag.valueOf("br"))) {
+            result.rawCollectionElementTypes.add(n.text());
+            collectionElementSection = false;
+          } else if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+            collectionElementSection = false;
+          }
         } else if (node.attr("class").equals("V8SH_chapter")) {
           descriptionSection = false;
         } else {
@@ -1330,6 +1402,7 @@ public class HtmlParser {
   protected static class PropertyDescription {
     private String accessMode = "";
     private final List<String> types = new ArrayList<>();
+    private final List<String> rawCollectionElementTypes = new ArrayList<>();
     private String description = "";
     private List<String> availabilities = Collections.emptyList();
     private String sinceVersion = "";
@@ -1419,6 +1492,14 @@ public class HtmlParser {
     private List<String> recommendedReplacements = Collections.emptyList();
 
     private ConstructorDescription() {
+    }
+  }
+
+  @Getter
+  protected static class EnumDescription {
+    private String valueType = "";
+
+    private EnumDescription() {
     }
   }
 

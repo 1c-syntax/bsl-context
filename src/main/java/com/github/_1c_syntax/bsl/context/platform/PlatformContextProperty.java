@@ -24,6 +24,9 @@ public class PlatformContextProperty implements ContextProperty {
     private final List<String> recommendedReplacements = List.of();
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
+    @lombok.Builder.Default
+    private final List<String> rawCollectionElementTypes = List.of();
+    private final List<Context> collectionElementTypes = new ArrayList<>();
 
     @Override
     public List<Availability> availabilities() {
@@ -33,6 +36,11 @@ public class PlatformContextProperty implements ContextProperty {
     @Override
     public List<Context> types() {
         return List.copyOf(types);
+    }
+
+    @Override
+    public List<Context> collectionElementTypes() {
+        return List.copyOf(collectionElementTypes);
     }
 
     @Override
@@ -75,6 +83,12 @@ public class PlatformContextProperty implements ContextProperty {
             var resolved = typeIndex.get(raw);
             if (resolved != null) {
                 types.add(resolved);
+            }
+        }
+        for (var raw : rawCollectionElementTypes) {
+            var resolved = typeIndex.get(raw);
+            if (resolved != null) {
+                collectionElementTypes.add(resolved);
             }
         }
     }

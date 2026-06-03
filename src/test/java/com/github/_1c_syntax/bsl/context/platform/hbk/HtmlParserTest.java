@@ -50,6 +50,25 @@ class HtmlParserTest {
     }
 
     @Test
+    void parsePropertyPage_CollectionElementType_ru() throws URISyntaxException {
+        // Свойство-коллекция: после блока «Тип:» в описании идёт маркер
+        // «Элементами коллекции являются объекты типа <NAME>», по которому парсер
+        // извлекает per-property element-type (qualifiedName с двоеточием).
+        var property = parsePropertyPage("properties/property_collection_element_ru");
+        assertThat(property.getTypes()).containsExactly("КоллекцияЭлементов");
+        assertThat(property.getRawCollectionElementTypes())
+            .containsExactly("ОписаниеЭлемента: Виджет");
+    }
+
+    @Test
+    void parsePropertyPage_CollectionElementType_en() throws URISyntaxException {
+        var property = parsePropertyPage("properties/property_collection_element_en");
+        assertThat(property.getTypes()).containsExactly("CollectionOfItems");
+        assertThat(property.getRawCollectionElementTypes())
+            .containsExactly("ItemDescription: Widget");
+    }
+
+    @Test
     void parsePropertyPage_ReadWrite_SingleType() throws URISyntaxException {
         var property = parsePropertyPage("properties/property_read_write");
         assertThat(property)
@@ -211,6 +230,34 @@ class HtmlParserTest {
         assertThat(ev.getDescription()).contains("Виджет в активном режиме");
         assertThat(ev.getSinceVersion()).isEqualTo("8.0");
         assertThat(ev.getDeprecatedSinceVersion()).isEmpty();
+    }
+
+    // --- enum page (main page; valueType marker) ---
+
+    @Test
+    void parseEnumPage_ru_extractsValueType() throws URISyntaxException {
+        // Главная страница enum-«библиотеки»: «Значения этого набора имеют тип <a>X</a>.»
+        // — задаёт общий тип всех значений набора. Парсер извлекает имя из ссылки.
+        var page = page("/enums/enum_page_with_value_type_ru.html");
+        var description = newParser().parseEnumPage(page);
+        assertThat(description.getValueType()).isEqualTo("Картинка");
+    }
+
+    @Test
+    void parseEnumPage_en_extractsValueType() throws URISyntaxException {
+        // EN-вариант маркера: «Values of this set have the type <a>X</a>.»
+        var page = page("/enums/enum_page_with_value_type_en.html");
+        var description = newParser().parseEnumPage(page);
+        assertThat(description.getValueType()).isEqualTo("Picture");
+    }
+
+    @Test
+    void parseEnumPage_withoutMarker_leavesValueTypeEmpty() throws URISyntaxException {
+        // Обычное системное перечисление (ВидДвиженияНакопления и т.п.) на странице
+        // фразы про общий тип не имеет — valueType остаётся пустым.
+        var page = page("/enums/enum_page_without_value_type.html");
+        var description = newParser().parseEnumPage(page);
+        assertThat(description.getValueType()).isEmpty();
     }
 
     // --- events ---
