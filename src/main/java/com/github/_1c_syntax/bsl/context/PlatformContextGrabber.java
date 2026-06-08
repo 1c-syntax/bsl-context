@@ -12,11 +12,14 @@ import com.github.eightm.lib.TableOfContent;
 import lombok.Getter;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -90,7 +93,7 @@ public class PlatformContextGrabber {
      */
     public static PlatformContextGrabber fromPlatformBin(Path platformBin, Path workDir) throws IOException {
         var hbk = platformBin.resolve("shcntx_ru.hbk");
-        if (!java.nio.file.Files.isRegularFile(hbk)) {
+        if (!Files.isRegularFile(hbk)) {
             throw new IOException("shcntx_ru.hbk not found in " + platformBin);
         }
         return fromHbk(hbk, workDir);
@@ -119,10 +122,10 @@ public class PlatformContextGrabber {
 
     private static Path resolveWorkDir(Path workDir) throws IOException {
         if (workDir != null) {
-            java.nio.file.Files.createDirectories(workDir);
+            Files.createDirectories(workDir);
             return workDir;
         }
-        return java.nio.file.Files.createTempDirectory("bsl-context-");
+        return Files.createTempDirectory("bsl-context-");
     }
 
     public void parse() throws IOException {
@@ -183,13 +186,22 @@ public class PlatformContextGrabber {
         if (!Files.isRegularFile(shlangRu)) {
             return List.of();
         }
-        var ruFs = readFileStorage(shlangRu);
-        if (ruFs == null) {
-            return List.of();
+        // shlang_*.hbk скармливаем парсеру целиком, а не через
+        // HbkContainerExtractor: в 8.5.4 FileStorage у shlang_ru.hbk
+        // разбит на несколько блоков, и extractor возвращает только
+        // первый — страница «annotations» при этом обрезается.
+        // readZip() ShlangParser'а brute-force сканит PK-сигнатуры и
+        // одинаково хорошо работает как по FileStorage, так и по сырому
+        // hbk-файлу (там нет «случайных» PK-сигнатур поверх ZIP-записей).
+        try {
+            var ruFs = Files.readAllBytes(shlangRu);
+            var shlangEn = parent.resolve("shlang_root.hbk");
+            var enFs = Files.isRegularFile(shlangEn)
+                ? Files.readAllBytes(shlangEn) : null;
+            return ShlangParser.parse(ruFs, enFs);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
-        var shlangEn = parent.resolve("shlang_root.hbk");
-        var enFs = Files.isRegularFile(shlangEn) ? readFileStorage(shlangEn) : null;
-        return ShlangParser.parse(ruFs, enFs);
     }
 
     private static byte[] readFileStorage(Path hbk) {
@@ -218,15 +230,15 @@ public class PlatformContextGrabber {
      * Без записи на диск. На реальном shcntx_ru.hbk (~24k файлов) ускоряет
      * фазу с десятков секунд до пары секунд.
      */
-    private static java.util.Map<String, byte[]> readFileStorageIntoMemory(byte[] data) throws IOException {
-        var pages = new java.util.HashMap<String, byte[]>(32 * 1024);
+    private static Map<String, byte[]> readFileStorageIntoMemory(byte[] data) throws IOException {
+        var pages = new HashMap<String, byte[]>(32 * 1024);
         var buffer = new byte[64 * 1024];
         try (var stream = new ZipInputStream(new ByteArrayInputStream(data),
                 Charset.forName("windows-1251"))) {
             ZipEntry entry = stream.getNextEntry();
             while (entry != null) {
                 if (!entry.isDirectory()) {
-                    var out = new java.io.ByteArrayOutputStream(
+                    var out = new ByteArrayOutputStream(
                         entry.getSize() > 0 ? (int) entry.getSize() : 1024);
                     int len;
                     while ((len = stream.read(buffer)) > 0) {
