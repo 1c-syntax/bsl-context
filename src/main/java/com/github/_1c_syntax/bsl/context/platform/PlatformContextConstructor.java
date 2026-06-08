@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform;
 
+import java.util.Map;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextConstructor;
 import com.github._1c_syntax.bsl.context.api.ContextName;
@@ -57,7 +58,7 @@ public class PlatformContextConstructor implements ContextConstructor {
         return List.copyOf(recommendedReplacements);
     }
 
-    protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+    protected void processRawTypes(Map<String, Context> typeIndex) {
         for (var p : parameters) {
             ((PlatformContextSignatureParameter) p).processRawTypes(typeIndex);
         }

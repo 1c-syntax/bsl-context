@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform;
 
+import java.util.Map;
 import com.github._1c_syntax.bsl.context.api.*;
 import lombok.Builder;
 
@@ -78,7 +79,7 @@ public class PlatformContextProperty implements ContextProperty {
         return name.toString();
     }
 
-    protected void processRawTypes(java.util.Map<String, Context> typeIndex) {
+    protected void processRawTypes(Map<String, Context> typeIndex) {
         for (var raw : rawTypes) {
             var resolved = typeIndex.get(raw);
             if (resolved != null) {

@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform;
 
+import java.util.Map;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextConstructor;
@@ -12,7 +13,6 @@ import lombok.Builder;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Платформенная коллекция значений ({@code Массив}, {@code Соответствие},

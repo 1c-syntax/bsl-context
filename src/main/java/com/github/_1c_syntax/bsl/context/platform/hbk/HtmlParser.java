@@ -4,6 +4,7 @@ import com.github.eightm.lib.DoubleLanguageString;
 import com.github.eightm.lib.Page;
 import lombok.Getter;
 import lombok.SneakyThrows;
+import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 import org.jsoup.nodes.TextNode;
@@ -14,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -365,7 +367,7 @@ public class HtmlParser {
    * подсказка, что использовать вместо устаревшего элемента. Возвращает
    * пустой список, если блока нет либо в нём нет {@code <a>}-ссылок.
    */
-  private List<String> findRecommendedReplacements(org.jsoup.nodes.Document document) {
+  private List<String> findRecommendedReplacements(Document document) {
     var blocks = document.select("div.__DEPRECATED_SHOW_STYLE__");
     if (blocks.isEmpty()) {
       return Collections.emptyList();
@@ -592,7 +594,7 @@ public class HtmlParser {
 
     for (Node node = chapter.nextSibling(); node != null; node = node.nextSibling()) {
       if (node instanceof Element el) {
-        var tag = el.tagName().toLowerCase(java.util.Locale.ROOT);
+        var tag = el.tagName().toLowerCase(Locale.ROOT);
         if ("p".equals(tag) && el.hasClass("V8SH_chapter")) {
           break;
         }

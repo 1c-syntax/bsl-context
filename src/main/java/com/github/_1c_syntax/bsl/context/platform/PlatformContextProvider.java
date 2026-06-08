@@ -8,6 +8,7 @@ import com.github._1c_syntax.bsl.context.platform.internal.PlatformContextStorag
 
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,7 +30,7 @@ public class PlatformContextProvider implements ContextProvider {
      * Если en-HBK не подгружен — карта пуста, и {@link #getEnAttachments(Object)}
      * вернёт {@link EnAttachments#EMPTY}.
      */
-    private final java.util.Map<Object, EnAttachments> enAttachments = new java.util.IdentityHashMap<>();
+    private final Map<Object, EnAttachments> enAttachments = new IdentityHashMap<>();
 
     public PlatformContextProvider(PlatformContextStorage storage) {
 

@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform;
 
+import java.util.Map;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
@@ -7,7 +8,6 @@ import com.github._1c_syntax.bsl.context.api.ContextName;
 import lombok.Builder;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 
 /**

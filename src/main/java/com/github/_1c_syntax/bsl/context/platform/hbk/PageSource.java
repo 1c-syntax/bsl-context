@@ -1,5 +1,6 @@
 package com.github._1c_syntax.bsl.context.platform.hbk;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -7,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
@@ -63,7 +65,7 @@ public interface PageSource {
         // все из заглавных букв) не зацепятся.
         // После имени допускаем `>` (raw closing), `&` (escaped &gt;),
         // пробел или конец слова.
-        var pattern = java.util.regex.Pattern.compile(
+        var pattern = Pattern.compile(
             "<(/?[A-Z][a-z][A-Za-z0-9_]*[A-Z][A-Za-z0-9_]*)(?=[>&\\s])");
         return pattern.matcher(html).replaceAll("&lt;$1");
     }
@@ -109,7 +111,7 @@ public interface PageSource {
             if (bytes == null) {
                 throw new IOException("page not found in memory: " + relativePath);
             }
-            return new java.io.ByteArrayInputStream(bytes);
+            return new ByteArrayInputStream(bytes);
         }
     }
 

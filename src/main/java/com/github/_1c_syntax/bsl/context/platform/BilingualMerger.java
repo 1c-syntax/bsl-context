@@ -71,7 +71,7 @@ public final class BilingualMerger {
     private static EnAttachments attachmentsForType(Context ctx) {
         if (ctx instanceof com.github._1c_syntax.bsl.context.api.ContextCollection coll) {
             return new EnAttachments(coll.description(), "", "",
-                java.util.List.of(), java.util.List.of(),
+                List.of(), List.of(),
                 coll.forEachDescription(), coll.indexAccessDescription());
         }
         if (ctx instanceof ContextType t) {

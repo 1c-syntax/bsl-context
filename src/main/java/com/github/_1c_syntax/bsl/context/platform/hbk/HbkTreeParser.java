@@ -46,7 +46,7 @@ public class HbkTreeParser {
     // но мы не затираем уже проиндексированный контекст. Сам список —
     // synchronizedList, иначе ArrayList.add под contention теряет элементы
     // (между ensureCapacity и size++).
-    private final List<Context> contexts = java.util.Collections.synchronizedList(new ArrayList<>());
+    private final List<Context> contexts = Collections.synchronizedList(new ArrayList<>());
     private final HtmlParser htmlParser;
 
     /**
