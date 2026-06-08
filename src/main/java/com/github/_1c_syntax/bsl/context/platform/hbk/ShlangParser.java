@@ -11,20 +11,28 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformLanguageKeyword;
 import com.github._1c_syntax.bsl.context.platform.primitive.PrimitivePlaceholderType;
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
 import java.util.zip.ZipInputStream;
 
 /**
@@ -77,6 +85,17 @@ public final class ShlangParser {
     private static final Pattern PREPROCESSOR_LINE =
         Pattern.compile("#([\\p{L}\\p{N}]+)\\s*\\(\\s*#([\\p{L}\\p{N}]+)\\s*\\)",
             Pattern.UNICODE_CHARACTER_CLASS);
+    /**
+     * Одиночная аннотация без en-пары и без параметров.
+     * Появилась в 8.5.4 — раздел «Аннотации обработки ошибок расширения»:
+     * {@code &ПриОшибкеРасширенияМетодаЗапрещатьИзменениеМодуля}. На странице
+     * аннотаций они идут в отдельном списке после {@code <h2>...</h2>},
+     * каждая в своём {@code <li>} как {@code <b>&amp;Имя</b> - описание...}.
+     * en-имена в shlang_root.hbk/annotations для них отсутствуют.
+     */
+    private static final Pattern SOLO_ANNOTATION_LINE =
+        Pattern.compile("(?:&amp;|&)([\\p{L}][\\p{L}\\p{N}]*)",
+            Pattern.UNICODE_CHARACTER_CLASS);
 
     private static final Map<String, LanguageKeywordCategory> SPECIAL_BASENAMES = Map.of(
         "def_BooleanTrue", LanguageKeywordCategory.LITERAL,
@@ -103,7 +122,7 @@ public final class ShlangParser {
      * (последним появился {@code Тип}). Если когда-нибудь распарсим
      * PackBlock shlang — заменим на TableOfContent-driven подход.
      */
-    private static final java.util.Set<String> PRIMITIVE_BASENAMES = java.util.Set.of(
+    private static final Set<String> PRIMITIVE_BASENAMES = Set.of(
         "def_String", "def_Number", "def_Date", "def_Boolean",
         "def_Null", "def_Undefined", "def_Type"
     );
@@ -118,6 +137,15 @@ public final class ShlangParser {
      */
     public static List<Context> parse(byte[] fileStorage) {
         return parse(fileStorage, null);
+    }
+
+
+    /**
+     * Все страницы FileStorage / hbk-файла одним проходом — публичная
+     * обёртка над brute-force ZIP-распаковкой для тестов и диагностики.
+     */
+    public static Map<String, byte[]> readAllPages(byte[] fileStorage) {
+        return readZip(fileStorage);
     }
 
     /**
@@ -143,10 +171,10 @@ public final class ShlangParser {
         // PREPROCESSOR_INSTRUCTION — два разных keyword'а (один используется
         // в коде, второй — в препроцессоре). Делим, чтобы они не подменяли
         // друг друга. Внутри одной категории дубли не плодим.
-        var publishedByCategory = new EnumMap<LanguageKeywordCategory, java.util.Set<String>>(
+        var publishedByCategory = new EnumMap<LanguageKeywordCategory, Set<String>>(
             LanguageKeywordCategory.class);
         for (var c : LanguageKeywordCategory.values()) {
-            publishedByCategory.put(c, new java.util.HashSet<>());
+            publishedByCategory.put(c, new HashSet<>());
         }
 
         for (var entry : pages.entrySet()) {
@@ -252,8 +280,15 @@ public final class ShlangParser {
         }
         var annotations = pages.get("annotations");
         if (annotations != null) {
-            extractListed(decode(annotations), LanguageKeywordCategory.ANNOTATION,
-                PRAGMA_OR_ANNOTATION_LINE, publishedByCategory.get(LanguageKeywordCategory.ANNOTATION), result);
+            var html = decode(annotations);
+            var published = publishedByCategory.get(LanguageKeywordCategory.ANNOTATION);
+            extractListed(html, LanguageKeywordCategory.ANNOTATION,
+                PRAGMA_OR_ANNOTATION_LINE, published, result);
+            // 8.5.4: новый раздел «Аннотации обработки ошибок расширения» —
+            // одиночные аннотации без en-пары и без параметров. Публикуем
+            // только новые имена (уже опубликованные через основной regex
+            // не дублируются — для них есть en-пара).
+            extractSoloAnnotations(html, published, result);
         }
         var instructions = pages.get("Instructions");
         if (instructions != null) {
@@ -334,7 +369,7 @@ public final class ShlangParser {
      * Из заголовка {@code <H1 class=V8SH_pagetitle>RU (EN)</H1>} достаёт ru-имя
      * и en-алиас. Если скобок с алиасом нет — возвращает {@code (ru, "")}.
      */
-    static ContextName extractTitleName(org.jsoup.nodes.Document doc) {
+    static ContextName extractTitleName(Document doc) {
         var h1 = doc.selectFirst("h1.V8SH_pagetitle, H1.V8SH_pagetitle");
         if (h1 == null) {
             return null;
@@ -364,7 +399,7 @@ public final class ShlangParser {
      * совпадает с тем, что выдаётся из snippet-only flow (где парсится
      * {@code .st}-файл), поэтому записи дедуплицируются.
      */
-    private static final java.util.List<String> CATEGORY_PREFIXES = java.util.List.of(
+    private static final List<String> CATEGORY_PREFIXES = List.of(
         "Оператор ", "Operator ",
         "Statement ", "Конструкция "
     );
@@ -380,7 +415,7 @@ public final class ShlangParser {
      * Извлекает первый абзац после маркера «Описание:». Если его нет —
      * берёт первый непустой абзац после заголовка.
      */
-    static String extractDescription(org.jsoup.nodes.Document doc) {
+    static String extractDescription(Document doc) {
         for (var p : doc.select("p, P")) {
             var text = p.text();
             // На разных страницах маркер с двоеточием («Описание:», «Description:»)
@@ -413,7 +448,7 @@ public final class ShlangParser {
         if (h1 != null) {
             var h1Text = h1.text().trim();
             // Берём ru/en часть отдельно — заголовок вида «Функция (Function)».
-            var h1Tokens = new java.util.HashSet<String>();
+            var h1Tokens = new HashSet<String>();
             h1Tokens.add(h1Text.toLowerCase(Locale.ROOT));
             var matcher = TITLE_BILINGUAL.matcher(h1Text);
             if (matcher.matches()) {
@@ -444,7 +479,7 @@ public final class ShlangParser {
      * нужно пропустить при поиске первого осмысленного абзаца после H1.
      * Сравнение регистронезависимое, по trimmed-тексту.
      */
-    private static final java.util.Set<String> SECTION_HEADERS = java.util.Set.of(
+    private static final Set<String> SECTION_HEADERS = Set.of(
         "синтаксис:", "syntax:",
         "параметры:", "parameters:",
         "возвращаемое значение:", "returned value:", "return value:",
@@ -576,7 +611,7 @@ public final class ShlangParser {
      */
     private static void extractBodyControlElements(String html, String enHtml,
                                                    PlatformLanguageKeyword parent,
-                                                   java.util.Set<String> publishedNames,
+                                                   Set<String> publishedNames,
                                                    List<Context> sink) {
         var ruPairs = collectBodyDescriptions(html, parent.name().getName());
         var enPairs = enHtml == null ? List.<TokenDescription>of()
@@ -642,7 +677,7 @@ public final class ShlangParser {
     private static List<TokenDescription> collectBodyDescriptions(String html, String parentName) {
         var doc = Jsoup.parse(html);
         var single = Pattern.compile("^\\p{L}[\\p{L}\\p{N}]*$", Pattern.UNICODE_CHARACTER_CLASS);
-        var seen = new java.util.LinkedHashMap<String, TokenDescription>();
+        var seen = new LinkedHashMap<String, TokenDescription>();
         // На def_Func/def_Proc body-keyword'ы выделены тегом <u>X</u> в секции
         // «Параметры:» — каждый в своём <p>, под ним описание. <strong class="ControlElement">
         // присутствует и в шапке "Syntax:" в одном <p> с несколькими тегами —
@@ -658,6 +693,13 @@ public final class ShlangParser {
             // или «Return <Return value>»), keyword — это первое слово; остальное —
             // placeholder параметра. Берём первый Cyrillic/Latin токен.
             boolean wasSingle = single.matcher(rawText).matches();
+            // <Категория>, <Код>, <Имя> и т.п. — голый placeholder в угловых
+            // скобках: это параметр оператора, не keyword языка. Пропускаем.
+            // (Случай «Возврат <Возвращаемое значение>» — это не placeholder,
+            // там сначала идёт keyword, его ловит extractLeadingWord.)
+            if (rawText.startsWith("<")) {
+                continue;
+            }
             String raw = wasSingle ? rawText : extractLeadingWord(rawText);
             if (raw == null || raw.isEmpty() || !single.matcher(raw).matches()) {
                 continue;
@@ -675,7 +717,7 @@ public final class ShlangParser {
             }
             // Найти ближайший <p>-предок и в нём текст после tag-а
             String desc = "";
-            org.jsoup.nodes.Element p = tag.parent();
+            Element p = tag.parent();
             while (p != null && !"p".equalsIgnoreCase(p.tagName())) {
                 p = p.parent();
             }
@@ -704,7 +746,7 @@ public final class ShlangParser {
                 seen.put(raw, new TokenDescription(raw, desc));
             }
         }
-        return new java.util.ArrayList<>(seen.values());
+        return new ArrayList<>(seen.values());
     }
 
     private record TokenDescription(String token, String description) {}
@@ -749,7 +791,7 @@ public final class ShlangParser {
      * {@code НЕ (NOT)}. Они оформлены как {@code <SPAN class=SourceCode>}
      * без префикса {@code #}.
      */
-    private static void extractLogicalOperators(String html, java.util.Set<String> publishedNames,
+    private static void extractLogicalOperators(String html, Set<String> publishedNames,
                                                 List<Context> sink) {
         if (html == null) {
             return;
@@ -788,7 +830,7 @@ public final class ShlangParser {
      * keyword'ы заданной категории. Дубликаты по имени отбрасываются.
      */
     private static void extractListed(String html, LanguageKeywordCategory category,
-                                      Pattern itemPattern, java.util.Set<String> publishedNames,
+                                      Pattern itemPattern, Set<String> publishedNames,
                                       List<Context> sink) {
         if (html == null) {
             return;
@@ -814,6 +856,47 @@ public final class ShlangParser {
                     .snippet(LanguageKeywordSnippet.EMPTY)
                     .build());
             }
+        }
+    }
+
+    /**
+     * 8.5.4: парсинг одиночных аннотаций без en-пары и без параметров.
+     * Эти аннотации идут в отдельном разделе страницы annotations после
+     * {@code <h2>Аннотации обработки ошибок расширения</h2>} как простые
+     * {@code <li><b>&amp;Имя</b> - описание</li>}. en-имена для них в
+     * shlang_root.hbk/annotations отсутствуют — alias оставляем пустым.
+     * Аннотации, уже опубликованные основным парсером ({@code &Перед/&Before}
+     * и т.п.), пропускаются — у них есть полноценная пара.
+     */
+    private static void extractSoloAnnotations(String html, Set<String> publishedNames,
+                                                List<Context> sink) {
+        if (html == null) {
+            return;
+        }
+        var doc = Jsoup.parse(html);
+        var description = extractDescription(doc);
+        for (var li : doc.select("li, LI")) {
+            // Берём только <li>, в которых есть «&amp;» — отбрасываем
+            // markdown-листы синтаксических подсказок (списки комбинаций),
+            // где имена уже опубликованы основным regex'ом.
+            var html0 = li.html();
+            if (!html0.contains("&amp;") && !html0.contains("&")) {
+                continue;
+            }
+            var matcher = SOLO_ANNOTATION_LINE.matcher(li.text());
+            if (!matcher.find()) {
+                continue;
+            }
+            var ru = matcher.group(1);
+            if (ru.isEmpty() || !publishedNames.add(ru.toLowerCase(Locale.ROOT))) {
+                continue;
+            }
+            sink.add(PlatformLanguageKeyword.builder()
+                .name(new ContextName(ru, ""))
+                .category(LanguageKeywordCategory.ANNOTATION)
+                .description(description)
+                .snippet(LanguageKeywordSnippet.EMPTY)
+                .build());
         }
     }
 
@@ -858,7 +941,7 @@ public final class ShlangParser {
                 if ((gpFlag & 0x08) != 0 && compressedSize == 0) continue; // streaming descriptor — пропускаем
                 byte[] uncompressed;
                 if (method == 0) {
-                    uncompressed = java.util.Arrays.copyOfRange(data, dataStart, dataStart + compressedSize);
+                    uncompressed = Arrays.copyOfRange(data, dataStart, dataStart + compressedSize);
                 } else if (method == 8) {
                     uncompressed = inflate(data, dataStart, compressedSize, Math.max(uncompressedSize, 256));
                 } else {
@@ -875,16 +958,16 @@ public final class ShlangParser {
     }
 
     private static byte[] inflate(byte[] src, int offset, int length, int hintCapacity) {
-        var inflater = new java.util.zip.Inflater(true); // raw deflate (no zlib wrapper)
+        var inflater = new Inflater(true); // raw deflate (no zlib wrapper)
         try {
             inflater.setInput(src, offset, length);
-            var out = new java.io.ByteArrayOutputStream(hintCapacity);
+            var out = new ByteArrayOutputStream(hintCapacity);
             var buffer = new byte[8 * 1024];
             while (!inflater.finished() && !inflater.needsInput()) {
                 int n;
                 try {
                     n = inflater.inflate(buffer);
-                } catch (java.util.zip.DataFormatException e) {
+                } catch (DataFormatException e) {
                     throw new RuntimeException("Failed to inflate shlang entry", e);
                 }
                 if (n == 0) {
