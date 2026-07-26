@@ -1,13 +1,13 @@
 # bsl-context
 
 Java-парсер синтакс-помощника (`.hbk`) платформы **1С:Предприятие 8**.
-Извлекает из файлов справки полную модель: типы, методы, свойства,
-события, конструкторы, перечисления, глобальный контекст и языковые
-конструкции встроенного языка (литералы, операторы, директивы
-компиляции, аннотации, инструкции препроцессора) — с метаданными
-(версии появления и депрекации, описания, примеры, ссылки «См. также»,
-значения по умолчанию для параметров, рекомендации по замене
-устаревших элементов).
+Извлекает из файлов справки полную модель: типы (включая коллекции и
+формы с их параметрами), методы, свойства, события, конструкторы,
+перечисления, глобальный контекст и языковые конструкции встроенного
+языка (литералы, операторы, директивы компиляции, аннотации, инструкции
+препроцессора) — с метаданными (версии появления и депрекации, описания,
+примеры, ссылки «См. также», значения по умолчанию для параметров,
+рекомендации по замене устаревших элементов).
 
 Парсятся **оба** парных HBK платформы:
 - `shcntx_*.hbk` — типы, методы, свойства, события, перечисления, глобальный контекст;
@@ -33,13 +33,27 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
 - **Полная модель элементов**
   ([`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/)):
   - `ContextType` — платформенный тип со свойствами / методами /
-    событиями / конструкторами и описанием из СП;
+    событиями / конструкторами, параметрами формы и описанием из СП;
+  - `ContextCollection extends ContextType` — коллекции (`Массив`,
+    `Соответствие`, `Структура`, `ТаблицаЗначений`, `ЭлементыФормы`, …):
+    типы элементов + поддержка обхода `Для каждого` и индексатора `[...]`
+    с их описаниями (блок «Элементы коллекции:» страницы типа);
+  - `ContextFormParameter` — **параметры формы** (`ContextType.formParameters()`,
+    непустой у `ФормаКлиентскогоПриложения`, расширений формы для справочника /
+    документа / отчёта / динамического списка, системных форм сохранения и
+    загрузки настроек): ключи структуры, которая передаётся в
+    `ОткрытьФорму(…, ПараметрыФормы)` и читается внутри формы через
+    `ЭтаФорма.Параметры`. У ключевых параметров (участвуют в ключе
+    уникальности окна) взведён `isKey()`;
   - `ContextEnum` / `ContextEnumValue` — системные перечисления и
-    их значения;
-  - `ContextMethod`, `ContextProperty`, `ContextEvent`,
-    `ContextConstructor`;
+    их значения; у enum-«библиотек» (`БиблиотекаКартинок`, `ЦветаСтиля`, …)
+    заполнен `valueType()` — общий тип всех значений набора;
+  - `ContextMethod` (в т.ч. флаг `isAsync()` для `…Асинх` / `…Async`),
+    `ContextProperty` (с `accessMode()` и per-property
+    `collectionElementTypes()`), `ContextEvent`, `ContextConstructor`;
   - `ContextMethodSignature` (с поддержкой нескольких вариантов
-    синтаксиса) и `ContextSignatureParameter`;
+    синтаксиса) и `ContextSignatureParameter` (`isRequired()`,
+    `defaultValue()`, `isVariadic()` для форм `<Знач1>,...,<ЗначN>`);
   - `PlatformGlobalContext` — глобальный контекст (top-level методы,
     свойства, события приложения / обычного приложения / сеанса /
     внешнего соединения);
@@ -47,7 +61,10 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
     (`LITERAL`, `STATEMENT`, `OPERATOR`, `DECLARATION`, `PRAGMA`,
     `ANNOTATION`, `PREPROCESSOR_INSTRUCTION`) +
     `LanguageKeywordSnippet` (двуязычный шаблон автодополнения
-    с плейсхолдерами `<?>`).
+    с плейсхолдерами `<?>`);
+  - `KnownStandardAttributes` — стандартные реквизиты MD-объектов
+    (`Ссылка`, `ПометкаУдаления`, `Проведен`, …) по типу-владельцу:
+    их состав знает только платформа, в СП и mdclasses его нет.
 - **Примитивные типы** — `Строка`, `Число`, `Дата`, `Булево`, `Тип`,
   `Null`, `Неопределено` — приходят как `ContextKind.PRIMITIVE_TYPE` со
   своими описаниями из синтакс-помощника. `Произвольный` (псевдо-маркер
@@ -55,9 +72,11 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   как синтетический примитив с тем же `kind`.
 - **Метаданные:** `sinceVersion`, `deprecatedSinceVersion`,
   `recommendedReplacements`, `description`, `notes` («Замечание:»),
-  `examples` («Пример:»), `seeAlso` («См. также:»),
+  `examples` («Пример:»), `seeAlso` («См. также:» — имена
+  квалифицируются владельцем: `Владелец.Член`),
   `returnValueDescription`, `syntaxText` (сырая строка `Синтаксис:`),
-  `defaultValue` параметра, `accessMode` свойства, `availabilities`
+  `defaultValue` / `isVariadic` параметра, `isAsync` метода,
+  `accessMode` свойства, `isKey` параметра формы, `availabilities`
   (по видам клиента).
 - **Generic-типы.** Типы вида `СправочникСсылка.<Имя справочника>` и
   свойства вида `СправочникиМенеджер :: <Имя справочника>` —
@@ -67,11 +86,14 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   элементы помечены флагом `isGeneric()` через эвристику в
   [`ContextNames`](src/main/java/com/github/_1c_syntax/bsl/context/api/ContextNames.java).
 - **Двуязычие (ru + en).** Имена самих сущностей приходят сразу с
-  обоими языками. Имена **вариантов сигнатур** и **параметров** в
-  одной HBK живут только на одном языке — для них есть
+  обоими языками. Имена **вариантов сигнатур** и **параметров**, а также
+  все **тексты** (описания, примеры, «Замечание:», «См. также:») в одной
+  HBK живут только на одном языке — для них есть
   [`BilingualMerger`](src/main/java/com/github/_1c_syntax/bsl/context/platform/BilingualMerger.java),
-  который парсит обе версии (`shcntx_ru.hbk` + `shcntx_root.hbk`) и
-  подтягивает en-алиасы в ru-провайдер. Языковые конструкции из
+  который парсит обе версии (`shcntx_ru.hbk` + `shcntx_root.hbk`),
+  подтягивает en-алиасы в ru-провайдер, а en-тексты кладёт рядом как
+  `EnAttachments` — их отдаёт `PlatformContextProvider.getEnAttachments(x)`
+  (сам объект модели остаётся ru). Языковые конструкции из
   `shlang_ru.hbk` подмешивают en-алиасы из парного `shlang_root.hbk`
   (имена body-keyword'ов вроде `Тогда`/`Then`, `КонецЕсли`/`EndIf`
   сматчиваются по позиции тегов на синхронных страницах ru/en),
@@ -89,15 +111,23 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
 
 ### Подключение зависимости
 
-Через [jitpack](https://jitpack.io):
+Релизы публикуются в Maven Central:
 
 ```kotlin
 repositories {
-    maven(url = "https://jitpack.io")
+    mavenCentral()
 }
 
 dependencies {
-    implementation("com.github.1c-syntax:bsl-context:<tag>")
+    implementation("io.github.1c-syntax:bsl-context:<version>")
+}
+```
+
+SNAPSHOT'ы (сборки с `master`) — в snapshot-репозитории Central:
+
+```kotlin
+repositories {
+    maven(url = "https://central.sonatype.com/repository/maven-snapshots/")
 }
 ```
 
@@ -147,12 +177,20 @@ PlatformContextGrabber.fromPlatformBin(platformBin, workDir);
 
 // 3. По явному пути к .hbk.
 PlatformContextGrabber.fromHbk(hbkFile, workDir);
-
-// Двуязычие — после parse() подтянуть en-имена сигнатур и параметров.
-grabber.parseBilingual(enHbkFile);
 ```
 
-`workDir` может быть `null` — тогда будет использован временный каталог.
+`workDir` может быть `null` (и у каждого метода есть перегрузка без него)
+— тогда будет использован временный каталог.
+
+`parse()` сам собирает всё, что лежит рядом с указанным `shcntx_ru.hbk`:
+парный `shcntx_root.hbk` (двуязычие — en-алиасы сигнатур/параметров и
+en-тексты) и `shlang_ru.hbk` + `shlang_root.hbk` (примитивы и языковые
+конструкции). Отдельно дёргать мердж нужно только если en-файл лежит
+не рядом:
+
+```java
+grabber.parseBilingual(enHbkFile);
+```
 
 ---
 
@@ -190,9 +228,10 @@ shcntx_*.hbk                                 shlang_*.hbk
 | `HtmlParser` | Извлекает структурные секции HTML-страницы в `*Description`-DTO. |
 | `ShlangParser` | Парсит раздел «Встроенный язык» из `shlang_*.hbk`: примитивные типы и языковые конструкции (литералы, операторы, директивы, аннотации, инструкции препроцессора). Сниппеты автодополнения и en-алиасы вытаскивает из парного `shlang_root.hbk`. |
 | `PageSource` | Абстракция «открыть страницу по пути». Реализации: `InMemory` (production) и `FileSystem` (тесты на распакованных фикстурах). |
-| `PlatformContextProvider` | Хранит готовые контексты и резолвит строковые ссылки в объекты `Context`. |
-| `BilingualMerger` | Подтягивает en-алиасы из en-провайдера в ru-провайдер. |
-| `ContextNames` | Утилита: эвристика `isGeneric(name)`. |
+| `PlatformContextProvider` | Хранит готовые контексты, резолвит строковые ссылки в объекты `Context` и отдаёт en-тексты через `getEnAttachments`. |
+| `BilingualMerger` | Подтягивает en-алиасы и en-тексты (`EnAttachments`) из en-провайдера в ru-провайдер. |
+| `ContextNames` | Утилиты по именам: `isGeneric`, `typeParameters`, `familyCore`, `placeholders`. |
+| `KnownStandardAttributes` | Справочник стандартных реквизитов MD-объектов (в HBK их состава нет). |
 
 API-интерфейсы в
 [`api/`](src/main/java/com/github/_1c_syntax/bsl/context/api/) не
@@ -236,7 +275,8 @@ BSL_CONTEXT_REAL_HBK=true ./gradlew test --tests "*Smoke*"
 и парсят пары `shcntx_ru.hbk` + `shcntx_root.hbk` (типы) и
 `shlang_ru.hbk` + `shlang_root.hbk` (примитивы и языковые конструкции).
 Проверяются: наличие ключевых типов, срабатывание generic-эвристики,
-корректность двуязычного мерджа, разрешение типов параметров методов
+корректность двуязычного мерджа, коллекции с их элементами, `valueType`
+enum-«библиотек», параметры формы, разрешение типов параметров методов
 в shlang-примитивы по ссылочной идентичности.
 
 ---
@@ -245,21 +285,41 @@ BSL_CONTEXT_REAL_HBK=true ./gradlew test --tests "*Smoke*"
 
 ```
 ContextProvider
-├─ getContexts(): List<Context>                  // типы и перечисления
+├─ getContexts(): List<Context>                  // типы, коллекции, перечисления, keyword'ы
 ├─ getContextByName(name): Optional<Context>     // ru или en, case-insensitive
 └─ getGlobalContext(): PlatformGlobalContext     // top-level
 
+PlatformContextProvider (реализация)
+└─ getEnAttachments(x): EnAttachments            // en-тексты для любого элемента модели
+   └─ description, returnValueDescription, notes, examples, seeAlso,
+      forEachDescription, indexAccessDescription
+
 Context
 ├─ name(): ContextName(ru, en)
-├─ kind(): ContextKind { PRIMITIVE_TYPE, TYPE, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD }
-└─ isGeneric(): boolean
+├─ kind(): ContextKind { PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD }
+├─ isGeneric(): boolean
+├─ typeParameters(): List<String>                // «СправочникСсылка.<Имя справочника>» → [Имя справочника]
+└─ familyCore(): String                          // → «СправочникСсылка»
 
 ContextType extends Context
 ├─ methods(): List<ContextMethod>
 ├─ properties(): List<ContextProperty>
 ├─ events(): List<ContextEvent>
 ├─ constructors(): List<ContextConstructor>
+├─ formParameters(): List<ContextFormParameter>   // непусто только у типов-форм
 └─ description(): String
+
+ContextCollection extends ContextType
+├─ collectionElementTypes(): List<Context>
+├─ supportsForEach(): boolean,  forEachDescription(): String
+└─ supportsIndexAccess(): boolean, indexAccessDescription(): String
+
+ContextFormParameter
+├─ name(): ContextName
+├─ types(): List<Context>
+├─ isKey(): boolean                              // «Использование: Ключевой»
+├─ description(), sinceVersion(), deprecatedSinceVersion(): String
+└─ recommendedReplacements(): List<String>
 
 ContextLanguageKeyword extends Context
 ├─ category(): LanguageKeywordCategory
@@ -274,8 +334,9 @@ ContextMethod
 ├─ examples(), seeAlso(), recommendedReplacements(): List<String>
 ├─ availabilities(): List<Availability>
 ├─ signatures(): List<ContextMethodSignature>
-├─ returnValues(): List<Context>
+├─ hasReturnValue(): boolean, returnValues(): List<Context>
 ├─ sinceVersion(), deprecatedSinceVersion(): String
+├─ isAsync(): boolean                            // …Асинх / …Async (await-методы 8.3.18+)
 └─ isGeneric(): boolean
 
 ContextMethodSignature
@@ -287,25 +348,60 @@ ContextMethodSignature
 ContextSignatureParameter
 ├─ name(): ContextName
 ├─ isRequired(): boolean
+├─ isVariadic(): boolean                         // <Знач1>,...,<ЗначN> → имя-база «Знач»
 ├─ types(): List<Context>
 ├─ description(): String
 └─ defaultValue(): String
 
 ContextProperty
+├─ name(): ContextName
 ├─ accessMode(): AccessMode { READ, READ_WRITE }
 ├─ types(): List<Context>
+├─ collectionElementTypes(): List<Context>       // «Элементами коллекции являются объекты типа …»
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
 ├─ recommendedReplacements(): List<String>
 ├─ availabilities(): List<Availability>
 └─ isGeneric(): boolean
 
+ContextEvent
+├─ name(): ContextName
+├─ signatures(): List<ContextMethodSignature>
+├─ description(), sinceVersion(), deprecatedSinceVersion(): String
+├─ availabilities(): List<Availability>
+└─ recommendedReplacements(): List<String>
+
+ContextConstructor
+├─ name(): ContextName                           // «По количеству элементов» и т.п.
+├─ parameters(): List<ContextSignatureParameter>
+├─ description(), syntaxText(): String
+├─ sinceVersion(), deprecatedSinceVersion(): String
+└─ recommendedReplacements(): List<String>
+
 ContextEnum extends Context
-└─ values(): List<ContextEnumValue>
+├─ values(): List<ContextEnumValue>
+└─ valueType(): Optional<ContextName>            // у enum-«библиотек»: БиблиотекаКартинок → Картинка
 
 ContextEnumValue
 ├─ name(): ContextName
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
 └─ recommendedReplacements(): List<String>
+
+PlatformGlobalContext extends Context
+├─ methods(): List<ContextMethod>, properties(): List<ContextProperty>
+├─ applicationEvents(), ordinaryApplicationEvents(),
+│  sessionModuleEvents(), externalConnectionModuleEvents(): List<ContextEvent>
+└─ sinceVersion(): String
+
+Availability { THIN_CLIENT, WEB_CLIENT, MOBILE_CLIENT, SERVER, THICK_CLIENT,
+               EXTERNAL_CONNECTION, MOBILE_APPLICATION_CLIENT,
+               MOBILE_APPLICATION_SERVER, MOBILE_STANDALONE_SERVER }
+
+KnownStandardAttributes
+└─ forOwner("ОбъектМетаданных: Документ"): List<ContextName>   // стандартные реквизиты
+
+ContextNames
+├─ isGeneric(name), familyCore(name), typeParameters(name)
+└─ placeholders(raw): List<Placeholder>          // позиции <…> в имени
 ```
 
 ---
