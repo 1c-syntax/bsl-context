@@ -20,9 +20,9 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   private final boolean isRequired;
   private final List<Context> types = new ArrayList<>();
   private final String description;
-  @lombok.Builder.Default
+  @Builder.Default
   private final String defaultValue = "";
-  @lombok.Builder.Default
+  @Builder.Default
   private final boolean variadic = false;
 
   private final List<String> rawTypes;

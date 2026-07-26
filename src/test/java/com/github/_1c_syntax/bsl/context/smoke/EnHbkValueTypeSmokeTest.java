@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Прицельный smoke-тест: парсит только английский HBK ({@code shcntx_root.hbk})
  * самой свежей платформы и проверяет, что
- * {@link com.github._1c_syntax.bsl.context.platform.hbk.HtmlParser#parseEnumPage}
+ * {@code HtmlParser#parseEnumPage}
  * корректно распознаёт английский маркер {@code "Values of this set have the type X"}.
  * <p>
  * Нужен, потому что основной {@link RealHbkSmokeTest} парсит {@code shcntx_ru.hbk}

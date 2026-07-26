@@ -19,7 +19,7 @@ public class PlatformGlobalContext implements Context {
    * Версия платформы, начиная с которой существует глобальный контекст
    * (берётся из самой страницы {@code Global context.html}).
    */
-  @lombok.Builder.Default
+  @Builder.Default
   private final String sinceVersion = "";
 
   @Override

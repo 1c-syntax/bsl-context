@@ -17,15 +17,15 @@ public class PlatformContextProperty implements ContextProperty {
     private final AccessMode accessMode;
     private final List<Availability> availabilities;
     private final String description;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String sinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String deprecatedSinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> recommendedReplacements = List.of();
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> rawCollectionElementTypes = List.of();
     private final List<Context> collectionElementTypes = new ArrayList<>();
 

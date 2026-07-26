@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * BilingualMerger подмешивает en-имена сигнатур/параметров из en-провайдера
  * в ru-провайдер. Имена самих сущностей (метод/свойство/тип) уже двуязычные
- * через {@link com.github.eightm.lib.Page#title()}, мерджу не подлежат.
+ * через {@code Page.title()}, мерджу не подлежат.
  */
 class BilingualMergerTest {
 

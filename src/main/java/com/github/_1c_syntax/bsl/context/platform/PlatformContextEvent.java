@@ -13,11 +13,11 @@ public class PlatformContextEvent implements ContextEvent{
   private final List<ContextMethodSignature> signatures;
   private final String description;
   private final List<Availability> availabilities;
-  @lombok.Builder.Default
+  @Builder.Default
   private final String sinceVersion = "";
-  @lombok.Builder.Default
+  @Builder.Default
   private final String deprecatedSinceVersion = "";
-  @lombok.Builder.Default
+  @Builder.Default
   private final List<String> recommendedReplacements = List.of();
 
   @Override

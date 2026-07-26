@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +31,7 @@ class ShlangSmokeTest {
         var provider = grabber.getProvider();
 
         var primitives = new ArrayList<ContextType>();
-        var keywordsByCategory = new EnumMap<LanguageKeywordCategory, java.util.List<ContextLanguageKeyword>>(
+        var keywordsByCategory = new EnumMap<LanguageKeywordCategory, List<ContextLanguageKeyword>>(
             LanguageKeywordCategory.class);
         for (var ctx : provider.getContexts()) {
             if (ctx.kind() == ContextKind.PRIMITIVE_TYPE && ctx instanceof ContextType type) {
@@ -57,7 +58,7 @@ class ShlangSmokeTest {
         out.append('\n');
 
         for (var cat : LanguageKeywordCategory.values()) {
-            var list = keywordsByCategory.getOrDefault(cat, java.util.List.of());
+            var list = keywordsByCategory.getOrDefault(cat, List.of());
             if (list.isEmpty()) {
                 continue;
             }

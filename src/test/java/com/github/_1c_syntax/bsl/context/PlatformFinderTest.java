@@ -2,6 +2,8 @@ package com.github._1c_syntax.bsl.context;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PlatformFinderTest {
@@ -32,7 +34,7 @@ class PlatformFinderTest {
     @Test
     void platformInstall_pathsResolveRelativeToBinDir() {
         var install = new PlatformFinder.PlatformInstall(
-            "8.3.27.1786", java.nio.file.Path.of("/foo/bin"));
+            "8.3.27.1786", Path.of("/foo/bin"));
         assertThat(install.syntaxHelperRu().toString().replace('\\', '/'))
             .endsWith("/foo/bin/shcntx_ru.hbk");
         assertThat(install.syntaxHelperEn().toString().replace('\\', '/'))

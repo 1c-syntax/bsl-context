@@ -2,6 +2,7 @@ package com.github._1c_syntax.bsl.context;
 
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
+import com.github._1c_syntax.bsl.context.platform.BilingualMerger;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkContainerExtractor;
 import com.github._1c_syntax.bsl.context.platform.hbk.HbkTreeParser;
@@ -164,7 +165,7 @@ public class PlatformContextGrabber {
         // Для en-HBK языковые конструкции не подмешиваем — он используется
         // только для merger'а en-алиасов сигнатур/параметров.
         var enProvider = parseSingle(enHbk, List.of());
-        com.github._1c_syntax.bsl.context.platform.BilingualMerger.merge(ruProvider, enProvider);
+        BilingualMerger.merge(ruProvider, enProvider);
         provider = ruProvider;
     }
 

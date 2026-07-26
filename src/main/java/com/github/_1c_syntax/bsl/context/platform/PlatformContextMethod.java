@@ -18,21 +18,21 @@ public class PlatformContextMethod implements ContextMethod {
     private final List<Context> returnValues = new ArrayList<>();
     private final String description;
     private final List<Availability> availabilities;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String sinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String deprecatedSinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String returnValueDescription = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String notes = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> examples = List.of();
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> seeAlso = List.of();
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> recommendedReplacements = List.of();
-    @lombok.Builder.Default
+    @Builder.Default
     private final boolean async = false;
 
     private final List<String> rawReturnValues;

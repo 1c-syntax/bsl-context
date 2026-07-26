@@ -22,7 +22,7 @@ public interface PageSource {
 
     /**
      * Открывает поток на чтение страницы по относительному пути из
-     * {@link com.github.eightm.lib.Page#htmlPath()} (со слэшем в начале).
+     * {@code Page.htmlPath()} (со слэшем в начале).
      */
     InputStream open(String relativePath) throws IOException;
 

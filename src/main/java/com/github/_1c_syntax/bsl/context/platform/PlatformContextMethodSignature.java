@@ -20,7 +20,7 @@ public class PlatformContextMethodSignature implements ContextMethodSignature {
   private ContextName name;
   private final List<ContextSignatureParameter> parameters;
   private final String description;
-  @lombok.Builder.Default
+  @Builder.Default
   private final String syntaxText = "";
 
 

@@ -1,15 +1,18 @@
 package com.github._1c_syntax.bsl.context.platform;
 
+import com.github._1c_syntax.bsl.context.api.ContextEnum;
+import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Тесты {@link PlatformContextEnum} — двух конструкторов и опциональной
- * подписи {@link com.github._1c_syntax.bsl.context.api.ContextEnum#valueType()}.
+ * подписи {@link ContextEnum#valueType()}.
  */
 class PlatformContextEnumTest {
 
@@ -62,7 +65,7 @@ class PlatformContextEnumTest {
             .properties(List.of())
             .description("")
             .build();
-        pictureLib.bindBilingualValueType(java.util.Map.of(
+        pictureLib.bindBilingualValueType(Map.of(
             "Картинка", picture, "Picture", picture));
         assertThat(pictureLib.valueType()).isPresent()
             .get()
@@ -75,7 +78,7 @@ class PlatformContextEnumTest {
         var enumeration = new PlatformContextEnum(
             new ContextName("ВидДвиженияНакопления", "AccumulationRecordType"),
             List.of());
-        enumeration.bindBilingualValueType(java.util.Map.of());
+        enumeration.bindBilingualValueType(Map.of());
         assertThat(enumeration.valueType()).isEmpty();
     }
 
@@ -92,7 +95,7 @@ class PlatformContextEnumTest {
             .properties(List.of())
             .description("")
             .build();
-        pictureLib.bindBilingualValueType(java.util.Map.of("Картинка", picture));
+        pictureLib.bindBilingualValueType(Map.of("Картинка", picture));
         assertThat(pictureLib.valueType().orElseThrow().getAlias())
             .isEqualTo("AlreadySet");
     }
@@ -102,7 +105,7 @@ class PlatformContextEnumTest {
         var pictureLib = new PlatformContextEnum(
             new ContextName("БиблиотекаКартинок", "PictureLib"), List.of(),
             new ContextName("Картинка", ""));
-        pictureLib.bindBilingualValueType(java.util.Map.of());
+        pictureLib.bindBilingualValueType(Map.of());
         // alias остаётся пустым, name — на месте.
         assertThat(pictureLib.valueType().orElseThrow().getName()).isEqualTo("Картинка");
         assertThat(pictureLib.valueType().orElseThrow().getAlias()).isEmpty();
@@ -110,7 +113,7 @@ class PlatformContextEnumTest {
 
     @Test
     void valuesGetter_exposesProvidedValues() {
-        var values = List.<com.github._1c_syntax.bsl.context.api.ContextEnumValue>of(
+        var values = List.<ContextEnumValue>of(
             new PlatformContextEnumValue(new ContextName("Один", "One")));
         var enumeration = new PlatformContextEnum(
             new ContextName("Пример", "Example"), values);

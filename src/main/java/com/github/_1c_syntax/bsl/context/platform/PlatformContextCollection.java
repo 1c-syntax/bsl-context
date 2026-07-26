@@ -21,7 +21,7 @@ import java.util.List;
  * <p>
  * Сырые имена типов-элементов из блока «Элементы коллекции:» страницы СП
  * хранятся в {@link #rawCollectionElementTypes} и резолвятся в
- * {@link Context}-объекты через {@link #processRawCollectionElementTypes(Map)}
+ * {@link Context}-объекты через {@link #processRawTypes(Map)}
  * один раз в конструкторе {@link PlatformContextProvider}.
  */
 @Builder
@@ -32,15 +32,15 @@ public class PlatformContextCollection implements ContextCollection {
     private final List<ContextConstructor> constructors;
     private final List<ContextEvent> events;
     private final List<ContextProperty> properties;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String description = "";
     private final List<String> rawCollectionElementTypes;
     private final List<Context> collectionElementTypes = new ArrayList<>();
     private final boolean supportsForEach;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String forEachDescription = "";
     private final boolean supportsIndexAccess;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String indexAccessDescription = "";
 
     @Override

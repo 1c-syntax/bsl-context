@@ -107,7 +107,7 @@ public final class ShlangParser {
 
     /**
      * Имена страниц-описаний примитивных типов в shlang. Эти страницы
-     * превращаются в {@link com.github._1c_syntax.bsl.context.api.ContextKind#PRIMITIVE_TYPE},
+     * превращаются в {@link ContextKind#PRIMITIVE_TYPE},
      * остальные {@code def_*} — в LANGUAGE_KEYWORD.
      * <p>
      * <b>Почему белый список, а не эвристика по тегу/группе СП:</b>
@@ -905,10 +905,10 @@ public final class ShlangParser {
      * <p>
      * FileStorage из HbkContainerExtractor — это «голая» последовательность
      * ZIP local file records без central directory и end-of-CD trailer'а.
-     * Поэтому {@link java.util.zip.ZipFile} не открывается («zip END header
+     * Поэтому {@code ZipFile} не открывается («zip END header
      * not found»). А у части записей в {@code shlang_*.hbk} в local header
      * compressed/uncompressed size расходится с фактическим, поэтому
-     * последовательный {@link java.util.zip.ZipInputStream} (и обычный
+     * последовательный {@link ZipInputStream} (и обычный
      * pos+=csize обход) после такой записи попадает в середину следующего
      * header'а и теряет хвост FileStorage. Например, в shlang_ru.hbk
      * {@code operator_await.html} (страница «Ждать») лежит на смещении 58516

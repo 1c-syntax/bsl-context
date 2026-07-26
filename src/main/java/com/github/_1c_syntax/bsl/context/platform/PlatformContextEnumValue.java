@@ -12,13 +12,13 @@ import java.util.List;
 @Builder
 public class PlatformContextEnumValue implements ContextEnumValue {
     private final ContextName name;
-    @lombok.Builder.Default
+    @Builder.Default
     private final String description = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String sinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final String deprecatedSinceVersion = "";
-    @lombok.Builder.Default
+    @Builder.Default
     private final List<String> recommendedReplacements = List.of();
 
     /**
