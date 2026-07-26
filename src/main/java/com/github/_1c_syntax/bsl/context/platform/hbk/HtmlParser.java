@@ -1,5 +1,9 @@
 package com.github._1c_syntax.bsl.context.platform.hbk;
 
+import com.github._1c_syntax.bsl.context.api.Context;
+import com.github._1c_syntax.bsl.context.api.ContextCollection;
+import com.github._1c_syntax.bsl.context.api.ContextEnum;
+import com.github._1c_syntax.bsl.context.platform.BilingualMerger;
 import com.github.eightm.lib.DoubleLanguageString;
 import com.github.eightm.lib.Page;
 import lombok.Getter;
@@ -95,7 +99,7 @@ public class HtmlParser {
    * «Items of this collection are objects of … type» (en) в описании свойства.
    * Следующий после маркера {@code <a>} содержит имя типа-элемента коллекции,
    * на которую указывает свойство (per-property element-type, в отличие от
-   * {@link com.github._1c_syntax.bsl.context.api.ContextCollection#collectionElementTypes()}
+   * {@link ContextCollection#collectionElementTypes()}
    * на самом типе-коллекции).
    */
   private static boolean containsCollectionElementMarker(String text) {
@@ -108,7 +112,7 @@ public class HtmlParser {
    * Маркер главной страницы enum-«библиотеки» (БиблиотекаКартинок,
    * БиблиотекаСтилей, ЦветаСтиля, …): «Значения этого набора имеют тип X»
    * — задаёт общий тип всех значений набора (см.
-   * {@link com.github._1c_syntax.bsl.context.api.ContextEnum#valueType()}).
+   * {@link ContextEnum#valueType()}).
    * Следующий после маркера {@code <a>} содержит имя типа.
    * EN-вариант на синтакс-помощнике встречается формулировкой
    * «Values of this set have the type X».
@@ -122,7 +126,7 @@ public class HtmlParser {
   /**
    * Создаёт парсер на источнике страниц (in-memory или файловая система).
    * Двуязычная поддержка реализуется внешним мерджером
-   * ({@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}),
+   * ({@link BilingualMerger}),
    * парсящим ru и en HBK отдельно, поэтому парсер сам в курсе только
    * одного языка.
    */
@@ -516,7 +520,7 @@ public class HtmlParser {
    * = {@code true} и список типов пустой.
    *
    * @param rawElementTypes        сырые ru-имена типов элементов (резолвятся
-   *                               в {@link com.github._1c_syntax.bsl.context.api.Context}
+   *                               в {@link Context}
    *                               через {@code PlatformContextProvider})
    * @param supportsForEach        упомянут ли в блоке оператор «Для каждого»
    * @param forEachDescription     описание поведения обхода — «выбираются
@@ -698,7 +702,7 @@ public class HtmlParser {
   /**
    * Разбирает главную страницу enum-«библиотеки» — извлекает общий тип
    * значений из фразы {@code Значения этого набора имеют тип X.}.
-   * См. {@link com.github._1c_syntax.bsl.context.api.ContextEnum#valueType()}.
+   * См. {@link ContextEnum#valueType()}.
    * Для «обычных» системных перечислений ({@code ВидДвиженияНакопления}
    * и т.п.) такой фразы на странице нет — поле {@code valueType} остаётся
    * пустой строкой.
@@ -897,6 +901,34 @@ public class HtmlParser {
 
     return result;
 
+  }
+
+  /**
+   * Разбирает страницу параметра формы
+   * ({@code .../ClientApplicationForm/formparams/ReadOnly57.html}).
+   * <p>
+   * Разметка полностью совпадает со страницей свойства — чаптер «Описание:»
+   * с ведущим «Тип: …», опциональные «Примечание:» / «См. также:» и
+   * version-info, — поэтому обход делает {@link #parsePropertyPage(Page)}.
+   * Отличается только смысл чаптера «Использование:»: у свойства там режим
+   * доступа («Только чтение»), а у параметра формы — признак ключевого
+   * («Ключевой» / «Key Parameter»), см. {@link #isKeyParameterMarker(String)}.
+   */
+  protected FormParameterDescription parseFormParameterPage(Page page) {
+    return new FormParameterDescription(parsePropertyPage(page));
+  }
+
+  /**
+   * Маркер ключевого параметра формы в чаптере «Использование:».
+   * ru: «Ключевой»; en: «Key Parameter» (обе формулировки сверены по
+   * реальным {@code shcntx_ru.hbk} / {@code shcntx_root.hbk}).
+   */
+  private static boolean isKeyParameterMarker(String usage) {
+    if (usage == null) {
+      return false;
+    }
+    var u = usage.trim();
+    return u.equalsIgnoreCase("Ключевой") || u.equalsIgnoreCase("Key Parameter");
   }
 
   @SneakyThrows
@@ -1412,6 +1444,33 @@ public class HtmlParser {
     private List<String> recommendedReplacements = Collections.emptyList();
 
     protected PropertyDescription() {
+    }
+
+  }
+
+  /**
+   * Параметр формы, снятый со страницы {@code formparams/*.html}.
+   * Строится из {@link PropertyDescription} (разметка страниц идентична),
+   * поля {@code accessMode} / {@code availabilities} свойства при этом
+   * схлопываются в один признак {@link #key}.
+   */
+  @Getter
+  protected static class FormParameterDescription {
+
+    private final List<String> types;
+    private final String description;
+    private final boolean key;
+    private final String sinceVersion;
+    private final String deprecatedSinceVersion;
+    private final List<String> recommendedReplacements;
+
+    private FormParameterDescription(PropertyDescription raw) {
+      this.types = raw.getTypes();
+      this.description = raw.getDescription();
+      this.key = isKeyParameterMarker(raw.getAccessMode());
+      this.sinceVersion = raw.getSinceVersion();
+      this.deprecatedSinceVersion = raw.getDeprecatedSinceVersion();
+      this.recommendedReplacements = raw.getRecommendedReplacements();
     }
 
   }

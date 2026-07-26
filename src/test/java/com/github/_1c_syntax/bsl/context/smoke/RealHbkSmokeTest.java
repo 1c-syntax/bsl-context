@@ -3,9 +3,14 @@ package com.github._1c_syntax.bsl.context.smoke;
 import com.github._1c_syntax.bsl.context.PlatformContextGrabber;
 import com.github._1c_syntax.bsl.context.PlatformFinder;
 import com.github._1c_syntax.bsl.context.api.Context;
+import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
+import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
+import com.github._1c_syntax.bsl.context.api.ContextKind;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.api.ContextType;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -13,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -139,7 +145,7 @@ class RealHbkSmokeTest {
                 .satisfies(t -> {
                     assertThat(t.name().getName()).isEqualTo("Произвольный");
                     assertThat(t.kind())
-                        .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.PRIMITIVE_TYPE);
+                        .isEqualTo(ContextKind.PRIMITIVE_TYPE);
                 });
             assertThat(c.supportsForEach()).as("Массив supportsForEach").isTrue();
             assertThat(c.supportsIndexAccess()).as("Массив supportsIndexAccess").isTrue();
@@ -173,10 +179,10 @@ class RealHbkSmokeTest {
         var formItems = provider.getContextByName("FormItems").orElseThrow();
         assertThat(formItems)
             .as("FormItems должен быть ContextCollection")
-            .isInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+            .isInstanceOf(ContextCollection.class);
         assertThat(formItems.kind())
-            .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.COLLECTION);
-        var formItemsNames = ((com.github._1c_syntax.bsl.context.api.ContextCollection) formItems)
+            .isEqualTo(ContextKind.COLLECTION);
+        var formItemsNames = ((ContextCollection) formItems)
             .collectionElementTypes().stream()
             .map(t -> t.name().getName())
             .toList();
@@ -212,6 +218,80 @@ class RealHbkSmokeTest {
         assertThat(sysEnum).isInstanceOf(ContextEnum.class);
         assertThat(((ContextEnum) sysEnum).valueType())
             .as("у обычного системного перечисления нет valueType")
+            .isEmpty();
+
+        // === Параметры формы (секция «Параметры формы:») ===
+        // ФормаКлиентскогоПриложения — базовая форма, у неё 6 параметров, из
+        // которых ключевые (участвуют в ключе уникальности окна) — ВыборДобавлением
+        // и КлючНазначенияИспользования.
+        var caf = provider.getContextByName("ФормаКлиентскогоПриложения").orElseThrow();
+        assertThat(caf).isInstanceOf(ContextType.class);
+        var cafParams = ((ContextType) caf).formParameters();
+        assertThat(cafParams)
+            .extracting(p -> p.name().getName())
+            .contains("ТолькоПросмотр", "КлючНазначенияИспользования",
+                "ПараметрыФункциональныхОпций", "ВыборДобавлением");
+        assertThat(cafParams)
+            .as("en-алиасы параметров формы приходят из TableOfContent")
+            .extracting(p -> p.name().getAlias())
+            .contains("ReadOnly", "PurposeUseKey");
+        assertThat(cafParams)
+            .filteredOn(ContextFormParameter::isKey)
+            .as("ключевые параметры формы — «Использование: Ключевой»")
+            .extracting(p -> p.name().getName())
+            .containsExactlyInAnyOrder("ВыборДобавлением", "КлючНазначенияИспользования");
+
+        var readOnlyParam = cafParams.stream()
+            .filter(p -> "ТолькоПросмотр".equals(p.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ТолькоПросмотр form parameter not found"));
+        assertThat(readOnlyParam.types())
+            .as("тип параметра формы должен резолвиться в Context")
+            .extracting(c -> c.name().getName())
+            .containsExactly("Булево");
+        assertThat(readOnlyParam.isKey()).isFalse();
+        assertThat(readOnlyParam.description()).isNotBlank();
+        assertThat(readOnlyParam.sinceVersion()).isNotBlank();
+
+        // en-описания параметров формы подтягиваются BilingualMerger'ом.
+        if (provider instanceof PlatformContextProvider p) {
+            assertThat(p.getDescriptionEn(readOnlyParam))
+                .as("en-описание параметра формы из shcntx_root.hbk")
+                .isNotBlank();
+        }
+
+        // Расширение формы для справочника («Расширение справочника» в СП) —
+        // ключевой параметр «Ключ» с generic-типом СправочникСсылка.<…>:
+        // проверяем, что резолвятся не только примитивы.
+        // Страница этого типа единственная в HBK, чьё имя файла подпадало под
+        // старую эвристику isCatalogPage («…extension for catalogs.html»), из-за
+        // чего весь тип молча терялся — здесь заодно и регрессионная проверка.
+        var catalogFormExt = provider.getContextByName("Расширение справочника")
+            .orElse(null);
+        assertThat(catalogFormExt)
+            .as("тип «Расширение справочника» должен присутствовать в модели")
+            .isInstanceOf(ContextType.class);
+        var keyParam = ((ContextType) catalogFormExt)
+            .formParameters().stream()
+            .filter(ContextFormParameter::isKey)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("key form parameter not found on catalog form extension"));
+        assertThat(keyParam.name().getName()).isEqualTo("Ключ");
+        assertThat(keyParam.types())
+            .extracting(c -> c.name().getName())
+            .anyMatch(n -> n.startsWith("СправочникСсылка."));
+
+        // Формы — не «случайная» горстка: секция есть у полутора десятков типов
+        // (в 8.3.27 — ровно 20: ФормаКлиентскогоПриложения, 14 расширений формы,
+        // 3 системные формы истории данных, формы сохранения и загрузки настроек).
+        var typesWithFormParameters = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .filter(t -> !t.formParameters().isEmpty())
+            .toList();
+        assertThat(typesWithFormParameters).hasSizeGreaterThanOrEqualTo(15);
+        // У обычных типов секции нет — список пуст, но не null.
+        assertThat(((ContextType) provider.getContextByName("Массив").orElseThrow()).formParameters())
             .isEmpty();
 
         // === Generic-методы: возврат должен резолвиться ===
@@ -285,24 +365,24 @@ class RealHbkSmokeTest {
     }
 
     private static void assertCollection(
-        com.github._1c_syntax.bsl.context.api.ContextProvider provider,
+        ContextProvider provider,
         String name,
-        java.util.function.Consumer<com.github._1c_syntax.bsl.context.api.ContextCollection> body
+        Consumer<ContextCollection> body
     ) {
         var ctx = provider.getContextByName(name).orElseThrow(() ->
             new AssertionError("type not found: " + name));
         assertThat(ctx)
             .as("%s должен быть ContextCollection", name)
-            .isInstanceOf(com.github._1c_syntax.bsl.context.api.ContextCollection.class);
+            .isInstanceOf(ContextCollection.class);
         assertThat(ctx.kind())
             .as("%s.kind() == COLLECTION", name)
-            .isEqualTo(com.github._1c_syntax.bsl.context.api.ContextKind.COLLECTION);
-        body.accept((com.github._1c_syntax.bsl.context.api.ContextCollection) ctx);
+            .isEqualTo(ContextKind.COLLECTION);
+        body.accept((ContextCollection) ctx);
     }
 
 
     private static void assertEnumValueType(
-        com.github._1c_syntax.bsl.context.api.ContextProvider provider,
+        ContextProvider provider,
         String enumName,
         String expectedRu,
         String expectedEn
@@ -324,7 +404,7 @@ class RealHbkSmokeTest {
     }
 
     private static void assertResolves(
-        com.github._1c_syntax.bsl.context.api.ContextProvider provider,
+        ContextProvider provider,
         String ruName,
         String enName
     ) {
@@ -337,7 +417,7 @@ class RealHbkSmokeTest {
     }
 
     private static Set<String> collectGenericTypeNames(
-        com.github._1c_syntax.bsl.context.api.ContextProvider provider
+        ContextProvider provider
     ) {
         var set = new LinkedHashSet<String>();
         for (Context c : provider.getContexts()) {

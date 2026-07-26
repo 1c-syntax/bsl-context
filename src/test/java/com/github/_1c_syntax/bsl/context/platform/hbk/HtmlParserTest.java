@@ -8,6 +8,7 @@ import java.net.URISyntaxException;
 import java.nio.file.Path;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -186,7 +187,7 @@ class HtmlParserTest {
         // Текст <a> несёт только имя члена, владелец — в href. По индексу путей
         // владелец резолвится в локализованное имя: "МенеджерОбработкиОшибок.…".
         var parser = newParser();
-        parser.setPageIndex(java.util.Map.of(
+        parser.setPageIndex(Map.of(
             "objects/cat/ErrorProcessingManager.html",
             new DoubleLanguageString("ErrorProcessingManager", "МенеджерОбработкиОшибок")));
         var method = parser.parseMethodPage(page("/methods/method_recommended_qualified.html"));
@@ -200,7 +201,7 @@ class HtmlParserTest {
         // Для глобального контекста префикс владельца опускается (метод доступен
         // по голому имени), standalone-тип отдаётся как есть.
         var parser = newParser();
-        parser.setPageIndex(java.util.Map.of(
+        parser.setPageIndex(Map.of(
             "objects/cat/GlobalContext.html",
             new DoubleLanguageString("Global context", "Глобальный контекст")));
         var method = parser.parseMethodPage(page("/methods/method_seealso_qualified.html"));
@@ -219,6 +220,44 @@ class HtmlParserTest {
         // должно собирать имена из вложенных <a>-ссылок.
         assertThat(method.getRecommendedReplacements())
             .containsExactly("НовыйМетод", "ЕщёОдинМетод");
+    }
+
+    // --- form parameters ---
+
+    @Test
+    void parseFormParameterPage_Key() throws URISyntaxException {
+        // Страница параметра формы размечена как страница свойства, но чаптер
+        // «Использование:» несёт не режим доступа, а признак ключевого параметра.
+        var param = parseFormParameterPage("formparams/form_parameter_key");
+        assertThat(param)
+            .hasFieldOrPropertyWithValue("key", true)
+            .hasFieldOrPropertyWithValue("types", List.of("Строка"))
+            .hasFieldOrPropertyWithValue("sinceVersion", "8.2")
+            .hasFieldOrPropertyWithValue("deprecatedSinceVersion", "");
+        assertThat(param.getDescription()).contains("Описание для теста");
+    }
+
+    @Test
+    void parseFormParameterPage_KeyMarker_en() throws URISyntaxException {
+        // en-маркер ключевого параметра — «Usage: Key Parameter».
+        var param = parseFormParameterPage("formparams/form_parameter_key_en");
+        assertThat(param)
+            .hasFieldOrPropertyWithValue("key", true)
+            .hasFieldOrPropertyWithValue("types", List.of("String"));
+    }
+
+    @Test
+    void parseFormParameterPage_Plain_MultipleTypes() throws URISyntaxException {
+        // Без чаптера «Использование:» параметр не ключевой; секция «См. также:»
+        // не должна протекать в описание.
+        var param = parseFormParameterPage("formparams/form_parameter_plain");
+        assertThat(param)
+            .hasFieldOrPropertyWithValue("key", false)
+            .hasFieldOrPropertyWithValue("types", List.of("Число", "Строка"))
+            .hasFieldOrPropertyWithValue("sinceVersion", "8.3");
+        assertThat(param.getDescription())
+            .contains("Описание для теста")
+            .doesNotContain("свойство");
     }
 
     // --- enum value ---
@@ -360,6 +399,11 @@ class HtmlParserTest {
     HtmlParser.MethodDescription parseMethodPage(String relativePath) throws URISyntaxException {
         var page = page("/%s.html".formatted(relativePath));
         return newParser().parseMethodPage(page);
+    }
+
+    HtmlParser.FormParameterDescription parseFormParameterPage(String relativePath) throws URISyntaxException {
+        var page = page("/%s.html".formatted(relativePath));
+        return newParser().parseFormParameterPage(page);
     }
 
     HtmlParser.PropertyDescription parsePropertyPage(String relativePath) throws URISyntaxException {

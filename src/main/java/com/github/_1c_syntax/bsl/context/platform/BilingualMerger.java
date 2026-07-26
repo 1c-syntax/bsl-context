@@ -1,10 +1,14 @@
 package com.github._1c_syntax.bsl.context.platform;
 
 import com.github._1c_syntax.bsl.context.api.Context;
+import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextEvent;
+import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
+import com.github._1c_syntax.bsl.context.api.ContextLanguageKeyword;
 import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
+import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
 import com.github._1c_syntax.bsl.context.api.ContextType;
 
@@ -65,11 +69,11 @@ public final class BilingualMerger {
     /**
      * Полный en-аттачмент к контексту: description + (для коллекций)
      * forEach/indexAccess. Для языковых ключевых слов
-     * ({@link com.github._1c_syntax.bsl.context.api.ContextLanguageKeyword})
+     * ({@link ContextLanguageKeyword})
      * — только description (отдельный source — отдельный shlang_*.hbk).
      */
     private static EnAttachments attachmentsForType(Context ctx) {
-        if (ctx instanceof com.github._1c_syntax.bsl.context.api.ContextCollection coll) {
+        if (ctx instanceof ContextCollection coll) {
             return new EnAttachments(coll.description(), "", "",
                 List.of(), List.of(),
                 coll.forEachDescription(), coll.indexAccessDescription());
@@ -105,6 +109,8 @@ public final class BilingualMerger {
         mergeConstructors(ruType, enType, provider);
         // Свойства типа — описания идут с en-страниц.
         mergePropertyDescriptions(ruType.properties(), enType.properties(), provider);
+        // Параметры формы — секция «Параметры формы:» (пусто у не-форм).
+        mergeFormParameterDescriptions(ruType.formParameters(), enType.formParameters(), provider);
     }
 
     private static void mergeGlobal(PlatformGlobalContext ru, PlatformGlobalContext en, PlatformContextProvider provider) {
@@ -135,11 +141,34 @@ public final class BilingualMerger {
     }
 
     private static void mergePropertyDescriptions(
-            List<? extends com.github._1c_syntax.bsl.context.api.ContextProperty> ru,
-            List<? extends com.github._1c_syntax.bsl.context.api.ContextProperty> en,
+            List<? extends ContextProperty> ru,
+            List<? extends ContextProperty> en,
             PlatformContextProvider provider) {
         if (provider == null || ru == null || en == null) return;
-        var enByName = new HashMap<String, com.github._1c_syntax.bsl.context.api.ContextProperty>(en.size() * 2);
+        var enByName = new HashMap<String, ContextProperty>(en.size() * 2);
+        for (var p : en) {
+            enByName.put(p.name().getName(), p);
+            enByName.put(p.name().getAlias(), p);
+        }
+        for (var ruP : ru) {
+            var enP = enByName.get(ruP.name().getName());
+            if (enP == null) enP = enByName.get(ruP.name().getAlias());
+            if (enP == null) continue;
+            provider.putDescriptionEn(ruP, enP.description());
+        }
+    }
+
+    /**
+     * Прокидывает en-описания параметров формы. Порядок секции «Параметры
+     * формы:» в ru- и en-HBK разный (сортировка по локализованному имени),
+     * поэтому матчим строго по имени, а не по позиции.
+     */
+    private static void mergeFormParameterDescriptions(
+            List<ContextFormParameter> ru,
+            List<ContextFormParameter> en,
+            PlatformContextProvider provider) {
+        if (provider == null || ru == null || en == null) return;
+        var enByName = new HashMap<String, ContextFormParameter>(en.size() * 2);
         for (var p : en) {
             enByName.put(p.name().getName(), p);
             enByName.put(p.name().getAlias(), p);

@@ -6,6 +6,7 @@ import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextConstructor;
 import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
 import com.github._1c_syntax.bsl.context.api.ContextEvent;
+import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
@@ -16,9 +17,11 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextConstructor;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextEnum;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextEnumValue;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextEvent;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextFormParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextMethod;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextMethodSignature;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProperty;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
@@ -34,6 +37,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 public class HbkTreeParser {
@@ -77,7 +81,7 @@ public class HbkTreeParser {
     /**
      * Парсит дерево shcntx и сразу подмешивает дополнительные контексты
      * (например, примитивы и языковые конструкции из shlang). Все они
-     * попадают в один список ДО создания {@link com.github._1c_syntax.bsl.context.platform.PlatformContextProvider}
+     * попадают в один список ДО создания {@link PlatformContextProvider}
      * — а значит {@code processRawTypes} в его конструкторе сможет
      * резолвить, например, имя «Строка» в shlang-{@code PrimitivePlaceholderType}
      * по {@code ==}-идентичности.
@@ -182,6 +186,7 @@ public class HbkTreeParser {
         List<ContextMethod> methods = Collections.emptyList();
         List<ContextEvent> events = Collections.emptyList();
         List<ContextConstructor> constructors = Collections.emptyList();
+        List<ContextFormParameter> formParameters = Collections.emptyList();
 
         for (var subPage : page.children()) {
             // title.en() и title.ru() в зависимости от языка HBK могут содержать
@@ -197,6 +202,9 @@ public class HbkTreeParser {
                 events = getEventsFromPage(subPage);
             } else if ("Конструкторы".equals(ru) || "Конструкторы".equals(en) || "Constructors".equals(ru) || "Constructors".equals(en)) {
                 constructors = getConstructors(subPage);
+            } else if ("Параметры формы".equals(ru) || "Параметры формы".equals(en)
+                || "Form parameters".equals(ru) || "Form parameters".equals(en)) {
+                formParameters = getFormParametersFromPage(subPage);
             }
         }
 
@@ -207,7 +215,10 @@ public class HbkTreeParser {
         // Если у страницы типа есть блок «Элементы коллекции:» — это коллекция
         // (Массив, Соответствие, Структура, ТаблицаЗначений и т.п.), публикуем
         // её как ContextCollection с типами элементов и доступными операциями
-        // обхода / индексатора. Иначе — обычный ContextType.
+        // обхода / индексатора. Иначе — обычный ContextType (в том числе
+        // типы-формы: параметры формы живут прямо на ContextType). Ни одна
+        // страница с секцией «Параметры формы:» блока «Элементы коллекции:»
+        // не имеет, так что на коллекциях список параметров всегда пуст.
         if (!collection.isEmpty()) {
             contexts.add(PlatformContextCollection.builder()
                 .name(name)
@@ -229,6 +240,7 @@ public class HbkTreeParser {
                 .properties(properties)
                 .events(events)
                 .constructors(constructors)
+                .formParameters(formParameters)
                 .description(description)
                 .build());
         }
@@ -383,6 +395,32 @@ public class HbkTreeParser {
             .build();
     }
 
+    /**
+     * Собирает параметры формы из страницы-рубрики «Параметры формы».
+     * Страницы самих параметров лежат в подкаталоге {@code formparams/}
+     * рядом с {@code properties/} и {@code methods/} типа-формы.
+     */
+    private List<ContextFormParameter> getFormParametersFromPage(Page page) {
+        return page.children().stream()
+            .filter(it -> PageSource.normalize(it.htmlPath()).contains("/formparams/"))
+            .map(it -> {
+
+                var description = htmlParser.parseFormParameterPage(it);
+
+                return (ContextFormParameter) PlatformContextFormParameter.builder()
+                    .name(new ContextName(it.title().ru(), it.title().en()))
+                    .rawTypes(description.getTypes())
+                    .description(description.getDescription())
+                    .key(description.isKey())
+                    .sinceVersion(description.getSinceVersion())
+                    .deprecatedSinceVersion(description.getDeprecatedSinceVersion())
+                    .recommendedReplacements(List.copyOf(description.getRecommendedReplacements()))
+                    .build();
+
+            })
+            .collect(Collectors.toList());
+    }
+
     private List<ContextProperty> getPropertiesFromPage(Page page) {
         // Свойства с именем, начинающимся с «<» (например, «<Имя справочника>»),
         // — generic-плейсхолдеры, заполняемые из конфигурации. Не отбрасываем,
@@ -411,6 +449,25 @@ public class HbkTreeParser {
             .collect(Collectors.toList());
     }
 
+    /**
+     * Имя страницы-каталога (узла-рубрики дерева СП): {@code catalogNNNN.html}.
+     * Регистр значимый — страницы с заглавной {@code Catalog…}
+     * ({@code Catalog2779.html}, {@code CatalogsManager.html}) это типы, а не
+     * рубрики.
+     */
+    private static final Pattern CATALOG_PAGE_NAME = Pattern.compile("catalog\\d+(\\.html)?");
+
+    /**
+     * Страница-каталог — узел-рубрика дерева, у которого нет собственного
+     * содержимого: парсер не создаёт по ней контекст, а спускается в детей.
+     * <p>
+     * Проверять «имя файла содержит catalog» нельзя: единственная страница СП
+     * с осмысленным именем-фразой — {@code Client application form extension
+     * for catalogs.html} («Расширение справочника») — тогда принимается за
+     * рубрику, и весь тип вместе со своими членами и параметрами формы молча
+     * теряется (её дети — рубрики с пустым htmlPath — на следующем витке
+     * отфильтровываются).
+     */
     private boolean isCatalogPage(Page page) {
         var elements = PageSource.normalize(page.htmlPath()).split("/");
         String endElement;
@@ -420,7 +477,7 @@ public class HbkTreeParser {
             endElement = elements[0];
         }
 
-        return endElement.contains("catalog");
+        return CATALOG_PAGE_NAME.matcher(endElement).matches();
     }
 
     private boolean isEnumPage(Page page) {

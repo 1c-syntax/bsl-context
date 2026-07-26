@@ -69,7 +69,8 @@ public class PlatformContextProvider implements ContextProvider {
                         c.properties().stream(),
                         c.methods().stream(),
                         c.events().stream(),
-                        c.constructors().stream()
+                        c.constructors().stream(),
+                        c.formParameters().stream()
                     );
                 })
             .flatMap(Function.identity())
@@ -83,6 +84,8 @@ public class PlatformContextProvider implements ContextProvider {
                     } else if (context instanceof PlatformContextConstructor c) {
                         c.processRawTypes(typeIndex);
                     } else if (context instanceof PlatformContextCollection c) {
+                        c.processRawTypes(typeIndex);
+                    } else if (context instanceof PlatformContextFormParameter c) {
                         c.processRawTypes(typeIndex);
                     }
                 });

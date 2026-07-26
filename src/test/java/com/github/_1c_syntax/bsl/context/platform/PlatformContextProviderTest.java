@@ -3,6 +3,7 @@ package com.github._1c_syntax.bsl.context.platform;
 import com.github._1c_syntax.bsl.context.api.AccessMode;
 import com.github._1c_syntax.bsl.context.api.Availability;
 import com.github._1c_syntax.bsl.context.api.Context;
+import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextSignatureParameter;
@@ -101,6 +102,44 @@ class PlatformContextProviderTest {
         assertThat(property.types())
             .extracting(c -> c.name().getName())
             .containsExactly("Строка", "Число");
+    }
+
+    @Test
+    void resolvesFormParameterTypes() {
+        var stringType = createSimpleType("Строка", "String");
+        var booleanType = createSimpleType("Булево", "Boolean");
+
+        var formParameter = PlatformContextFormParameter.builder()
+            .name(new ContextName("КлючНазначенияИспользования", "PurposeUseKey"))
+            .description("")
+            .key(true)
+            .rawTypes(List.of("Строка", "Булево", "НетТакогоТипа"))
+            .build();
+
+        var form = PlatformContextType.builder()
+            .name(new ContextName("ФормаКлиентскогоПриложения", "ClientApplicationForm"))
+            .methods(Collections.emptyList())
+            .properties(Collections.emptyList())
+            .events(Collections.emptyList())
+            .constructors(Collections.emptyList())
+            .formParameters(List.of(formParameter))
+            .build();
+
+        var storage = new PlatformContextStorage(new ArrayList<>(List.of(stringType, booleanType, form)));
+
+        new PlatformContextProvider(storage);
+
+        assertThat(formParameter.types())
+            .extracting(c -> c.name().getName())
+            .containsExactly("Строка", "Булево");
+        assertThat(formParameter.isKey()).isTrue();
+    }
+
+    @Test
+    void typeWithoutFormParametersReturnsEmptyList() {
+        // Билдер не заполняет formParameters у обычных типов — наружу должен
+        // отдаваться пустой список, а не null.
+        assertThat(createSimpleType("Массив", "Array").formParameters()).isEmpty();
     }
 
     @Test
