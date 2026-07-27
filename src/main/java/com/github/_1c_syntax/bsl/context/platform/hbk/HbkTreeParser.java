@@ -536,6 +536,7 @@ public class HbkTreeParser {
                     .recommendedReplacements(List.copyOf(propertyDescription.getRecommendedReplacements()))
                     .notes(propertyDescription.getNotes())
                     .seeAlso(List.copyOf(propertyDescription.getSeeAlso()))
+                    .examples(List.copyOf(propertyDescription.getExamples()))
                     .build();
 
             })

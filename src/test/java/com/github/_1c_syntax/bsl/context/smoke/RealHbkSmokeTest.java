@@ -5,6 +5,7 @@ import com.github._1c_syntax.bsl.context.PlatformFinder;
 import com.github._1c_syntax.bsl.context.api.Availability;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
+import com.github._1c_syntax.bsl.context.api.ContextConstructor;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextKind;
@@ -22,7 +23,9 @@ import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 
 /**
  * Smoke-тест: распарсить реальный {@code shcntx_ru.hbk} самой свежей
@@ -377,6 +380,49 @@ class RealHbkSmokeTest {
             .isNotEmpty();
         assertThat(arrayCtx.deprecatedSinceVersion()).isEmpty();
 
+        // === Футер страницы и блоки кода без чаптера «Пример:» ===
+        // На всех 25503 страницах внизу стоит <HR> и ссылка «Методическая
+        // информация» — она не должна попадать ни в один текст модели.
+        var typeList = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .toList();
+        assertThat(typeList)
+            .as("футер страницы не приклеивается к описанию типа")
+            .noneMatch(t -> t.description().contains("Методическая информация"));
+        assertThat(typeList.stream().flatMap(t -> t.constructors().stream()))
+            .as("футер страницы не приклеивается к синтаксису конструктора")
+            .noneMatch(c -> c.syntaxText().contains("Методическая"));
+        var graphicalSchema = (ContextType) provider.getContextByName("ГрафическаяСхема").orElseThrow();
+        assertThat(graphicalSchema.constructors())
+            .singleElement()
+            .extracting(ContextConstructor::syntaxText)
+            .isEqualTo("Новый ГрафическаяСхема");
+
+        // Блок кода — таблица с фоном #f7f7f7. Иногда перед ней нет чаптера
+        // «Пример:» (слово вписано в описание через <BR>), а сама таблица
+        // лежит внутри незакрытого <p> — код всё равно должен стать примером.
+        var externalReport = (ContextType) provider.getContextByName("ВнешнийОтчет").orElseThrow();
+        var fillCheck = externalReport.events().stream()
+            .filter(e -> "ОбработкаПроверкиЗаполнения".equals(e.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ОбработкаПроверкиЗаполнения не найдено"));
+        assertThat(fillCheck.examples())
+            .singleElement(as(STRING))
+            .startsWith("Процедура ОбработкаПроверкиЗаполнения");
+        assertThat(fillCheck.description().strip())
+            .as("код и повисший маркер «Пример:» уехали из описания")
+            .doesNotContain("Пример:", "Процедура ОбработкаПроверкиЗаполнения")
+            .endsWith("проверка которых не была указана.");
+        assertThat(typeList.stream().flatMap(t -> t.events().stream()))
+            .as("такие примеры не единичны")
+            .filteredOn(e -> !e.examples().isEmpty())
+            .hasSizeGreaterThan(15);
+        assertThat(typeList.stream().flatMap(t -> t.properties().stream()))
+            .as("у части свойств тоже есть блоки кода")
+            .filteredOn(p -> !p.examples().isEmpty())
+            .isNotEmpty();
+
         // Не единичный случай: версии и доступность должны быть у большинства типов.
         var typesWithVersion = provider.getContexts().stream()
             .filter(ContextType.class::isInstance)
@@ -410,6 +456,24 @@ class RealHbkSmokeTest {
         assertThat(columnsGroup.seeAlso())
             .as("«См. также:» перечисления квалифицируется владельцем")
             .isNotEmpty();
+
+        // Двуязычие значений перечисления: имя приходит из оглавления сразу
+        // парой, а описание — только с ru-страницы, и en-вариант к нему
+        // прикладывает BilingualMerger.
+        if (provider instanceof PlatformContextProvider p) {
+            var enumValues = provider.getContexts().stream()
+                .filter(ContextEnum.class::isInstance)
+                .map(ContextEnum.class::cast)
+                .flatMap(e -> e.values().stream())
+                .filter(v -> !v.description().isBlank())
+                .toList();
+            long withEn = enumValues.stream()
+                .filter(v -> !p.getDescriptionEn(v).isBlank())
+                .count();
+            assertThat(withEn)
+                .as("en-описания значений перечислений (%d из %d)", withEn, enumValues.size())
+                .isGreaterThan((long) (enumValues.size() * 0.99));
+        }
 
         // === Заметки / примеры / «См. также» у членов ===
         // События: «Примечание:» и «См. также:» раньше парсились и терялись.

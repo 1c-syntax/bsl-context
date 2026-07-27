@@ -3,6 +3,7 @@ package com.github._1c_syntax.bsl.context.platform;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
+import com.github._1c_syntax.bsl.context.api.ContextEnumValue;
 import com.github._1c_syntax.bsl.context.api.ContextEvent;
 import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextLanguageKeyword;
@@ -61,6 +62,8 @@ public final class BilingualMerger {
 
             if (ruCtx instanceof ContextType ruType && enCtx instanceof ContextType enType) {
                 mergeMembers(ruType, enType, ruProv);
+            } else if (ruCtx instanceof ContextEnum ruEnum && enCtx instanceof ContextEnum enEnum) {
+                mergeEnumValueDescriptions(ruEnum.values(), enEnum.values(), ruProv);
             }
         }
 
@@ -162,7 +165,7 @@ public final class BilingualMerger {
             if (enP == null) enP = enByName.get(ruP.name().getAlias());
             if (enP == null) continue;
             provider.putEnAttachments(ruP, new EnAttachments(
-                enP.description(), "", enP.notes(), List.of(), enP.seeAlso(), "", ""));
+                enP.description(), "", enP.notes(), enP.examples(), enP.seeAlso(), "", ""));
         }
     }
 
@@ -187,6 +190,33 @@ public final class BilingualMerger {
             if (enP == null) continue;
             provider.putEnAttachments(ruP, new EnAttachments(
                 enP.description(), "", "", List.of(), enP.seeAlso(), "", ""));
+        }
+    }
+
+    /**
+     * Прокидывает en-описания значениям перечисления. {@link ContextEnum} —
+     * не {@link ContextType}, поэтому через {@code mergeMembers} значения не
+     * проходят и нуждаются в отдельном мерже.
+     * <p>
+     * Порядок значений в ru- и en-HBK разный (сортировка по локализованному
+     * имени), поэтому матчим по имени, а не по позиции: имена значений
+     * двуязычны уже на входе — они приходят из оглавления.
+     */
+    private static void mergeEnumValueDescriptions(
+            List<ContextEnumValue> ru,
+            List<ContextEnumValue> en,
+            PlatformContextProvider provider) {
+        if (provider == null || ru == null || en == null) return;
+        var enByName = new HashMap<String, ContextEnumValue>(en.size() * 2);
+        for (var v : en) {
+            enByName.put(v.name().getName(), v);
+            enByName.put(v.name().getAlias(), v);
+        }
+        for (var ruV : ru) {
+            var enV = enByName.get(ruV.name().getName());
+            if (enV == null) enV = enByName.get(ruV.name().getAlias());
+            if (enV == null) continue;
+            provider.putDescriptionEn(ruV, enV.description());
         }
     }
 

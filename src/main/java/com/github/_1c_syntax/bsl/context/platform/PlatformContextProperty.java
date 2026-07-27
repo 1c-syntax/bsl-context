@@ -27,6 +27,8 @@ public class PlatformContextProperty implements ContextProperty {
     private final String notes = "";
     @Builder.Default
     private final List<String> seeAlso = List.of();
+    @Builder.Default
+    private final List<String> examples = List.of();
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
     @Builder.Default
@@ -86,6 +88,11 @@ public class PlatformContextProperty implements ContextProperty {
     @Override
     public List<String> seeAlso() {
         return List.copyOf(seeAlso);
+    }
+
+    @Override
+    public List<String> examples() {
+        return List.copyOf(examples);
     }
 
     @Override

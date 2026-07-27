@@ -473,6 +473,10 @@ public class HtmlParser {
     var result = new GlobalContextPageDescription();
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
       if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
         var versionText = n.text();
         if (isSinceVersionText(versionText)) {
@@ -531,6 +535,17 @@ public class HtmlParser {
     var seeAlso = new SeeAlsoCollector();
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+
+      if (isCodeTable(node)) {
+        sink.description = stripTrailingExampleMarker(sink.description);
+        addSnippet(sink.examples, node);
+        continue;
+      }
+      extractNestedCodeTables(node, sink.examples);
       var isChapter = node.attr("class").equals("V8SH_chapter") && node instanceof Element;
 
       if (node.attr("class").equals("V8SH_pagetitle") && node instanceof Element n
@@ -643,6 +658,94 @@ public class HtmlParser {
       return new String[]{t, ""};
     }
     return new String[]{ru, en};
+  }
+
+  /** Хвостовой маркер «Пример:» перед блоком кода — в описании он лишний. */
+  private static final Pattern TRAILING_EXAMPLE_MARKER =
+    Pattern.compile("(Пример|Примеры|Example|Examples)\\s*:?\\s*$");
+
+  /**
+   * Горизонтальная линия перед футером страницы. Футер есть на всех 25503
+   * страницах shcntx: {@code <HR>} и ссылка «Методическая информация» на
+   * сайт 1С. Без обрыва она приклеивается к последней открытой секции —
+   * например к синтаксису конструктора {@code Новый ГрафическаяСхема}.
+   */
+  private static boolean isFooterSeparator(Node node) {
+    return node instanceof Element element && "hr".equalsIgnoreCase(element.tagName());
+  }
+
+  /**
+   * Блок кода на странице СП — таблица с фоном {@code #f7f7f7}.
+   * <p>
+   * Обычно ей предшествует чаптер «Пример:», но на 32 страницах платформа
+   * вписала слово «Пример:» прямо в текст описания через {@code <BR>}
+   * (например, {@code ВнешнийОтчет.ОбработкаПроверкиЗаполнения}) — там
+   * чаптера нет, и без этой проверки код целиком утекал в описание.
+   */
+  private static boolean isCodeTable(Node node) {
+    return node instanceof Element element
+      && "table".equalsIgnoreCase(element.tagName())
+      && element.attr("bgcolor").toLowerCase(Locale.ROOT).contains("f7f7f7");
+  }
+
+  /**
+   * Кладёт текст блока кода в примеры, если он непустой. Отступы в коде
+   * платформа набирает неразрывными пробелами — их заменяем на обычные,
+   * иначе {@code strip()} не срежет ведущий отступ, а сам код будет
+   * непригоден для вставки в редактор.
+   */
+  private static void addSnippet(List<String> examples, Node node) {
+    var snippet = ((Element) node).wholeText().replace('\u00A0', ' ').strip();
+    if (!snippet.isBlank()) {
+      examples.add(snippet);
+    }
+  }
+
+  /**
+   * Вынимает блоки кода, вложенные внутрь узла описания, и удаляет их из
+   * разметки — вместе с текстовым маркером «Пример:», который стоит перед
+   * ними. Без этого код целиком попадал бы в описание: на странице
+   * {@code ВнешнийОтчет.ОбработкаПроверкиЗаполнения} платформа не закрыла
+   * {@code <p>} перед таблицей, и та оказалась внутри абзаца.
+   */
+  private static void extractNestedCodeTables(Node node, List<String> examples) {
+    if (!(node instanceof Element element)) {
+      return;
+    }
+    for (var table : element.select("table")) {
+      if (!isCodeTable(table)) {
+        continue;
+      }
+      addSnippet(examples, table);
+      stripExampleMarkerBefore(table);
+      table.remove();
+    }
+  }
+
+  /**
+   * Подрезает маркер «Пример:», стоящий перед блоком кода: он относится
+   * к коду, а не к описанию. Между маркером и таблицей могут быть
+   * {@code <br>} и пробельные текстовые узлы.
+   */
+  private static void stripExampleMarkerBefore(Element table) {
+    var previous = table.previousSibling();
+    while (previous != null) {
+      if (previous instanceof TextNode text) {
+        var value = text.getWholeText();
+        if (!value.isBlank()) {
+          text.text(stripTrailingExampleMarker(value));
+          return;
+        }
+      } else if (!(previous instanceof Element element) || !"br".equalsIgnoreCase(element.tagName())) {
+        return;
+      }
+      previous = previous.previousSibling();
+    }
+  }
+
+  /** Убирает из описания повисший маркер «Пример:». */
+  private static String stripTrailingExampleMarker(String description) {
+    return TRAILING_EXAMPLE_MARKER.matcher(description.stripTrailing()).replaceAll("").stripTrailing();
   }
 
   /** Есть ли в строке кириллические буквы. */
@@ -946,6 +1049,10 @@ public class HtmlParser {
     var descriptionSection = false;
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
 
       if (descriptionSection) {
         if (node.attr("class").equals("V8SH_chapter")) {
@@ -993,6 +1100,17 @@ public class HtmlParser {
     var seeAlso = new SeeAlsoCollector();
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+
+      if (isCodeTable(node)) {
+        result.description = stripTrailingExampleMarker(result.description);
+        addSnippet(result.examples, node);
+        continue;
+      }
+      extractNestedCodeTables(node, result.examples);
 
       if (accessModeSection) {
 
@@ -1206,6 +1324,17 @@ public class HtmlParser {
     }
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+
+      if (isCodeTable(node)) {
+        result.description = stripTrailingExampleMarker(result.description);
+        addSnippet(result.examples, node);
+        continue;
+      }
+      extractNestedCodeTables(node, result.examples);
 
       if (syntaxSection) {
         if (node.attr("class").equals("V8SH_chapter")) {
@@ -1545,6 +1674,17 @@ public class HtmlParser {
     var seeAlso = new SeeAlsoCollector();
 
     for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+
+      if (isCodeTable(node)) {
+        result.description = stripTrailingExampleMarker(result.description);
+        addSnippet(result.examples, node);
+        continue;
+      }
+      extractNestedCodeTables(node, result.examples);
       final var className = node.hasAttr("class") ? node.attr("class") : "";
       if ((className.equals("V8SH_pagetitle") || className.equals("V8SH_heading")) && node instanceof Element n) {
         result.name = n.text();
@@ -1737,6 +1877,7 @@ public class HtmlParser {
     private String deprecatedSinceVersion = "";
     private List<String> recommendedReplacements = Collections.emptyList();
     private final List<String> seeAlso = new ArrayList<>();
+    private final List<String> examples = new ArrayList<>();
 
     protected PropertyDescription() {
     }
