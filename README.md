@@ -71,13 +71,16 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   «любой тип») у платформы отдельной страницы не имеет и публикуется
   как синтетический примитив с тем же `kind`.
 - **Метаданные:** `sinceVersion`, `deprecatedSinceVersion`,
-  `recommendedReplacements`, `description`, `notes` («Замечание:»),
-  `examples` («Пример:»), `seeAlso` («См. также:» — имена
-  квалифицируются владельцем: `Владелец.Член`),
-  `returnValueDescription`, `syntaxText` (сырая строка `Синтаксис:`),
-  `defaultValue` / `isVariadic` параметра, `isAsync` метода,
-  `accessMode` свойства, `isKey` параметра формы, `availabilities`
-  (по видам клиента).
+  `recommendedReplacements`, `description`, `notes` («Примечание:» /
+  «Замечание:»), `availabilities`, `examples` («Пример:»), `seeAlso`
+  («См. также:» — имена квалифицируются владельцем: `Владелец.Член`).
+  Снимаются не только с member-страниц, но и с главных страниц
+  **типов, коллекций и перечислений** — то есть у `Массив` есть
+  `sinceVersion() == "8.0"`, доступность по клиентам и пример кода,
+  а у `ГруппировкаКолонок` — описание, доступность и «См. также:».
+  Специфичные для элемента: `returnValueDescription` и `isAsync` метода,
+  `syntaxText` (сырая строка `Синтаксис:`), `defaultValue` / `isVariadic`
+  параметра, `accessMode` свойства, `isKey` параметра формы.
 - **Generic-типы.** Типы вида `СправочникСсылка.<Имя справочника>` и
   свойства вида `СправочникиМенеджер :: <Имя справочника>` —
   плейсхолдеры, конкретизация которых приходит из конфигурации и
@@ -85,12 +88,29 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   [`MDClasses`](https://github.com/1c-syntax/mdclasses). Все такие
   элементы помечены флагом `isGeneric()` через эвристику в
   [`ContextNames`](src/main/java/com/github/_1c_syntax/bsl/context/api/ContextNames.java).
+- **Имя контекста — с заголовка страницы** (`V8SH_pagetitle`), а не из
+  оглавления HBK: в оглавлении узел назван относительно родителя
+  («Поле ввода» → «Расширение»), что вне дерева бессмысленно и вдобавок
+  неуникально. На странице стоит полное имя — «Расширение поля ввода
+  системного перечисления». В 8.3.27 так уточняются 209 типов из 2420,
+  и число неуникальных имён падает с 27 до 10. Одна страница даёт ровно
+  один контекст, даже если в оглавлении она висит несколькими узлами.
+- **Омонимы.** Оставшиеся совпадения имён — от самой платформы: например,
+  «Расширение элементов управления, расположенных в форме» существует
+  отдельно для обычных (8.0) и управляемых (8.2) форм, причём и ru-, и
+  en-имена у них одинаковые. Оба контекста есть в модели;
+  `getContextByName` вернёт какой-то один, а
+  **`getContextsByName`** — все, различить их можно по `sinceVersion()`,
+  `availabilities()` или составу членов.
 - **Двуязычие (ru + en).** Имена самих сущностей приходят сразу с
   обоими языками. Имена **вариантов сигнатур** и **параметров**, а также
   все **тексты** (описания, примеры, «Замечание:», «См. также:») в одной
   HBK живут только на одном языке — для них есть
   [`BilingualMerger`](src/main/java/com/github/_1c_syntax/bsl/context/platform/BilingualMerger.java),
   который парсит обе версии (`shcntx_ru.hbk` + `shcntx_root.hbk`),
+  сопоставляет контексты **по пути страницы внутри HBK** (пути ru и en
+  совпадают файл-в-файл, а имена расходятся: на ru-странице в скобках
+  может стоять устаревший английский вариант),
   подтягивает en-алиасы в ru-провайдер, а en-тексты кладёт рядом как
   `EnAttachments` — их отдаёт `PlatformContextProvider.getEnAttachments(x)`
   (сам объект модели остаётся ru). Языковые конструкции из
@@ -286,7 +306,8 @@ enum-«библиотек», параметры формы, разрешение
 ```
 ContextProvider
 ├─ getContexts(): List<Context>                  // типы, коллекции, перечисления, keyword'ы
-├─ getContextByName(name): Optional<Context>     // ru или en, case-insensitive
+├─ getContextByName(name): Optional<Context>     // ru или en, case-insensitive; при омонимах — любой из них
+├─ getContextsByName(name): List<Context>        // все омонимы (см. ниже)
 └─ getGlobalContext(): PlatformGlobalContext     // top-level
 
 PlatformContextProvider (реализация)
@@ -299,15 +320,21 @@ Context
 ├─ kind(): ContextKind { PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD }
 ├─ isGeneric(): boolean
 ├─ typeParameters(): List<String>                // «СправочникСсылка.<Имя справочника>» → [Имя справочника]
-└─ familyCore(): String                          // → «СправочникСсылка»
+├─ familyCore(): String                          // → «СправочникСсылка»
+│   // «страничные» метаданные главной страницы контекста:
+├─ description(), notes(): String                // «Описание:», «Примечание:»/«Замечание:»
+├─ availabilities(): List<Availability>          // «Доступность:»
+├─ sinceVersion(), deprecatedSinceVersion(): String
+├─ examples(): List<String>                      // «Пример:»
+├─ seeAlso(): List<String>                       // «См. также:» → «Владелец.Член»
+└─ recommendedReplacements(): List<String>
 
 ContextType extends Context
 ├─ methods(): List<ContextMethod>
 ├─ properties(): List<ContextProperty>
 ├─ events(): List<ContextEvent>
 ├─ constructors(): List<ContextConstructor>
-├─ formParameters(): List<ContextFormParameter>   // непусто только у типов-форм
-└─ description(): String
+└─ formParameters(): List<ContextFormParameter>   // непусто только у типов-форм
 
 ContextCollection extends ContextType
 ├─ collectionElementTypes(): List<Context>
@@ -319,7 +346,7 @@ ContextFormParameter
 ├─ types(): List<Context>
 ├─ isKey(): boolean                              // «Использование: Ключевой»
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
-└─ recommendedReplacements(): List<String>
+└─ seeAlso(), recommendedReplacements(): List<String>
 
 ContextLanguageKeyword extends Context
 ├─ category(): LanguageKeywordCategory
@@ -358,16 +385,17 @@ ContextProperty
 ├─ accessMode(): AccessMode { READ, READ_WRITE }
 ├─ types(): List<Context>
 ├─ collectionElementTypes(): List<Context>       // «Элементами коллекции являются объекты типа …»
-├─ description(), sinceVersion(), deprecatedSinceVersion(): String
-├─ recommendedReplacements(): List<String>
+├─ description(), notes(), sinceVersion(), deprecatedSinceVersion(): String
+├─ seeAlso(), recommendedReplacements(): List<String>
 ├─ availabilities(): List<Availability>
 └─ isGeneric(): boolean
 
 ContextEvent
 ├─ name(): ContextName
 ├─ signatures(): List<ContextMethodSignature>
-├─ description(), sinceVersion(), deprecatedSinceVersion(): String
+├─ description(), notes(), sinceVersion(), deprecatedSinceVersion(): String
 ├─ availabilities(): List<Availability>
+├─ examples(), seeAlso(): List<String>
 └─ recommendedReplacements(): List<String>
 
 ContextConstructor
@@ -375,9 +403,10 @@ ContextConstructor
 ├─ parameters(): List<ContextSignatureParameter>
 ├─ description(), syntaxText(): String
 ├─ sinceVersion(), deprecatedSinceVersion(): String
+├─ examples(), seeAlso(): List<String>
 └─ recommendedReplacements(): List<String>
 
-ContextEnum extends Context
+ContextEnum extends Context                      // страничные метаданные — из Context
 ├─ values(): List<ContextEnumValue>
 └─ valueType(): Optional<ContextName>            // у enum-«библиотек»: БиблиотекаКартинок → Картинка
 
@@ -390,7 +419,7 @@ PlatformGlobalContext extends Context
 ├─ methods(): List<ContextMethod>, properties(): List<ContextProperty>
 ├─ applicationEvents(), ordinaryApplicationEvents(),
 │  sessionModuleEvents(), externalConnectionModuleEvents(): List<ContextEvent>
-└─ sinceVersion(): String
+└─ sinceVersion(), deprecatedSinceVersion(): String
 
 Availability { THIN_CLIENT, WEB_CLIENT, MOBILE_CLIENT, SERVER, THICK_CLIENT,
                EXTERNAL_CONNECTION, MOBILE_APPLICATION_CLIENT,
