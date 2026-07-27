@@ -344,16 +344,23 @@ class RealHbkSmokeTest {
         assertThat(provider.getContextsByName("Array")).hasSize(1);
         assertThat(provider.getContextsByName("НетТакогоТипа")).isEmpty();
 
-        // Одна страница HBK — один контекст. В оглавлении PlannerCommandSource.html
-        // висит двумя узлами («ИсточникКомандПланировщика» и
-        // «ИсточникКомандПоляПланировщика»), но тип это один.
-        assertThat(provider.getContexts())
-            .filteredOn(c -> "ИсточникКомандПоляПланировщика".equals(c.name().getName()))
-            .as("страница, включённая в оглавление дважды, даёт один контекст")
-            .hasSize(1);
-        assertThat(provider.getContexts())
-            .filteredOn(c -> "СтандартнаяКомандаПоляПланировщика".equals(c.name().getName()))
-            .hasSize(1);
+        // Переименование: на PlannerCommandSource.html ведут два узла оглавления
+        // — «ИсточникКомандПланировщика» (устарел с 8.3.23) и
+        // «ИсточникКомандПоляПланировщика». Это разные перечисления с разными
+        // наборами значений, и оба должны сохраниться.
+        var oldPlannerSource = provider.getContextByName("ИсточникКомандПланировщика")
+            .orElseThrow(() -> new AssertionError("ИсточникКомандПланировщика не найден"));
+        var newPlannerSource = provider.getContextByName("ИсточникКомандПоляПланировщика")
+            .orElseThrow(() -> new AssertionError("ИсточникКомандПоляПланировщика не найден"));
+        assertThat(oldPlannerSource).isNotSameAs(newPlannerSource);
+        assertThat(((ContextEnum) oldPlannerSource).values())
+            .as("у устаревшего перечисления все значения помечены deprecated")
+            .isNotEmpty()
+            .allMatch(v -> !v.deprecatedSinceVersion().isBlank());
+        assertThat(((ContextEnum) newPlannerSource).values())
+            .as("у нового перечисления значения актуальны")
+            .isNotEmpty()
+            .allMatch(v -> v.deprecatedSinceVersion().isBlank());
 
         // === Страничные метаданные типа ===
         // Со страницы типа снимаются не только «Описание:», но и доступность,

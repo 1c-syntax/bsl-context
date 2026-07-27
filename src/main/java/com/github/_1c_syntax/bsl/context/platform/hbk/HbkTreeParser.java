@@ -37,8 +37,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -53,8 +51,11 @@ public class HbkTreeParser {
     // synchronizedList, иначе ArrayList.add под contention теряет элементы
     // (между ensureCapacity и size++).
     private final List<Context> contexts = Collections.synchronizedList(new ArrayList<>());
-    /** Пути страниц, по которым контекст уже создан — см. {@link #claimPage(Page)}. */
-    private final Set<String> visitedPages = ConcurrentHashMap.newKeySet();
+    /**
+     * Сколько узлов оглавления ведёт на каждую страницу. Обычно один, но
+     * бывает и несколько — см. {@link #contextName(Page, String, String)}.
+     */
+    private final Map<String, Integer> nodesPerPage = new HashMap<>();
     private final HtmlParser htmlParser;
 
     /**
@@ -106,6 +107,8 @@ public class HbkTreeParser {
         indexPages(tree.getPages(), pageIndex);
         htmlParser.setPageIndex(pageIndex);
 
+        countNodes(tree.getPages(), nodesPerPage);
+
         visitPagesFromTree(tree.getPages());
 
         return contexts;
@@ -126,6 +129,20 @@ public class HbkTreeParser {
         }
     }
 
+    /**
+     * Рекурсивно считает, сколько узлов оглавления ссылается на каждую
+     * страницу.
+     */
+    private static void countNodes(List<Page> pages, Map<String, Integer> sink) {
+        for (var page : pages) {
+            var htmlPath = page.htmlPath();
+            if (htmlPath != null && !htmlPath.isEmpty()) {
+                sink.merge(PageSource.normalize(htmlPath), 1, Integer::sum);
+            }
+            countNodes(page.children(), sink);
+        }
+    }
+
     public void visitPagesFromTree(List<Page> pages) {
 
         pages.parallelStream()
@@ -137,33 +154,12 @@ public class HbkTreeParser {
                 } else if (isCatalogPage(page)) {
                     visitPagesFromTree(page.children());
                 } else if (isEnumPage(page)) {
-                    if (claimPage(page)) {
-                        visitEnumPage(page);
-                    }
+                    visitEnumPage(page);
                 } else {
-                    if (claimPage(page)) {
-                        visitTypePage(page);
-                    }
+                    visitTypePage(page);
                 }
             });
 
-    }
-
-    /**
-     * Резервирует страницу за создаваемым контекстом; {@code false}, если по
-     * ней контекст уже построен.
-     * <p>
-     * В оглавлении одна и та же страница иногда висит несколькими узлами с
-     * разными подписями: {@code PlannerCommandSource.html} — это и
-     * «ИсточникКомандПланировщика», и «ИсточникКомандПоляПланировщика» (в en-HBK
-     * второй узел помечен суффиксом {@code #&^@^%&*^#1}). Имя контекста берётся
-     * с заголовка страницы, а он один на всех, поэтому такие узлы дали бы
-     * несколько одинаковых контекстов с одинаковым составом членов.
-     * <p>
-     * Обход идёт через {@code parallelStream}, поэтому набор конкурентный.
-     */
-    private boolean claimPage(Page page) {
-        return visitedPages.add(PageSource.normalize(page.htmlPath()));
     }
 
     public void visitGlobalContextPage(Page page) {
@@ -303,11 +299,19 @@ public class HbkTreeParser {
      * Иначе имена ru- и en-провайдеров разъехались бы, и
      * {@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}
      * перестал бы сопоставлять контексты по имени.
+     * <p>
+     * Исключение — страница, на которую ведёт несколько узлов оглавления: так
+     * платформа оформляет переименования. {@code PlannerCommandSource.html} —
+     * это и «ИсточникКомандПланировщика» (устаревший с 8.3.23), и
+     * «ИсточникКомандПоляПланировщика», причём наборы значений у них разные.
+     * Заголовок страницы один на всех, поэтому для таких узлов имя берётся из
+     * оглавления — только оно их и различает.
      */
-    private static ContextName contextName(Page page, String pageTitleRu, String pageTitleEn) {
+    private ContextName contextName(Page page, String pageTitleRu, String pageTitleEn) {
         var tocRu = page.title().ru();
         var tocEn = page.title().en();
-        if (pageTitleRu == null || pageTitleRu.isBlank()) {
+        if (pageTitleRu == null || pageTitleRu.isBlank()
+            || nodesPerPage.getOrDefault(PageSource.normalize(page.htmlPath()), 1) > 1) {
             return new ContextName(tocRu, tocEn);
         }
         if (HtmlParser.hasCyrillic(tocRu) != HtmlParser.hasCyrillic(pageTitleRu)) {
