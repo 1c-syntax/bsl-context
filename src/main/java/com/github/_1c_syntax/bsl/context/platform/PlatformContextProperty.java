@@ -23,6 +23,10 @@ public class PlatformContextProperty implements ContextProperty {
     private final String deprecatedSinceVersion = "";
     @Builder.Default
     private final List<String> recommendedReplacements = List.of();
+    @Builder.Default
+    private final String notes = "";
+    @Builder.Default
+    private final List<String> seeAlso = List.of();
     private final List<Context> types = new ArrayList<>();
     private final List<String> rawTypes;
     @Builder.Default
@@ -72,6 +76,16 @@ public class PlatformContextProperty implements ContextProperty {
     @Override
     public List<String> recommendedReplacements() {
         return List.copyOf(recommendedReplacements);
+    }
+
+    @Override
+    public String notes() {
+        return notes;
+    }
+
+    @Override
+    public List<String> seeAlso() {
+        return List.copyOf(seeAlso);
     }
 
     @Override

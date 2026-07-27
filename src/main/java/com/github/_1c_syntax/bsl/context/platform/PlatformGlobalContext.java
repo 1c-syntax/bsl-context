@@ -21,6 +21,13 @@ public class PlatformGlobalContext implements Context {
    */
   @Builder.Default
   private final String sinceVersion = "";
+  /**
+   * Версия платформы, начиная с которой глобальный контекст помечен как не
+   * рекомендуемый к использованию (на практике пусто — блок на странице есть,
+   * но парсер обязан его не терять).
+   */
+  @Builder.Default
+  private final String deprecatedSinceVersion = "";
 
   @Override
   public ContextName name() { return name; }
@@ -54,5 +61,10 @@ public class PlatformGlobalContext implements Context {
 
   public String sinceVersion() {
     return sinceVersion;
+  }
+
+  @Override
+  public String deprecatedSinceVersion() {
+    return deprecatedSinceVersion;
   }
 }

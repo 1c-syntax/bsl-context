@@ -65,4 +65,12 @@ public interface ContextFormParameter {
     default List<String> recommendedReplacements() {
         return List.of();
     }
+
+    /**
+     * Имена связанных контекстов и их членов — блок «См. также:»
+     * (члены квалифицированы владельцем: {@code Владелец.Член}).
+     */
+    default List<String> seeAlso() {
+        return List.of();
+    }
 }

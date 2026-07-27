@@ -37,6 +37,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -51,6 +53,8 @@ public class HbkTreeParser {
     // synchronizedList, иначе ArrayList.add под contention теряет элементы
     // (между ensureCapacity и size++).
     private final List<Context> contexts = Collections.synchronizedList(new ArrayList<>());
+    /** Пути страниц, по которым контекст уже создан — см. {@link #claimPage(Page)}. */
+    private final Set<String> visitedPages = ConcurrentHashMap.newKeySet();
     private final HtmlParser htmlParser;
 
     /**
@@ -133,12 +137,33 @@ public class HbkTreeParser {
                 } else if (isCatalogPage(page)) {
                     visitPagesFromTree(page.children());
                 } else if (isEnumPage(page)) {
-                    visitEnumPage(page);
+                    if (claimPage(page)) {
+                        visitEnumPage(page);
+                    }
                 } else {
-                    visitTypePage(page);
+                    if (claimPage(page)) {
+                        visitTypePage(page);
+                    }
                 }
             });
 
+    }
+
+    /**
+     * Резервирует страницу за создаваемым контекстом; {@code false}, если по
+     * ней контекст уже построен.
+     * <p>
+     * В оглавлении одна и та же страница иногда висит несколькими узлами с
+     * разными подписями: {@code PlannerCommandSource.html} — это и
+     * «ИсточникКомандПланировщика», и «ИсточникКомандПоляПланировщика» (в en-HBK
+     * второй узел помечен суффиксом {@code #&^@^%&*^#1}). Имя контекста берётся
+     * с заголовка страницы, а он один на всех, поэтому такие узлы дали бы
+     * несколько одинаковых контекстов с одинаковым составом членов.
+     * <p>
+     * Обход идёт через {@code parallelStream}, поэтому набор конкурентный.
+     */
+    private boolean claimPage(Page page) {
+        return visitedPages.add(PageSource.normalize(page.htmlPath()));
     }
 
     public void visitGlobalContextPage(Page page) {
@@ -176,6 +201,7 @@ public class HbkTreeParser {
                 .sessionModuleEvents(sessionModuleEvents)
                 .externalConnectionModuleEvents(externalConnectionModuleEvents)
                 .sinceVersion(pageInfo.getSinceVersion())
+                .deprecatedSinceVersion(pageInfo.getDeprecatedSinceVersion())
                 .build()
         );
     }
@@ -208,9 +234,9 @@ public class HbkTreeParser {
             }
         }
 
-        var name = new ContextName(page.title().ru(), page.title().en());
-        var description = htmlParser.parseTypePageDescription(page);
-        var collection = htmlParser.parseTypePageCollectionInfo(page);
+        var pageInfo = htmlParser.parseTypePage(page);
+        var name = contextName(page, pageInfo.getPageTitleRu(), pageInfo.getPageTitleEn());
+        var collection = pageInfo.getCollectionInfo();
 
         // Если у страницы типа есть блок «Элементы коллекции:» — это коллекция
         // (Массив, Соответствие, Структура, ТаблицаЗначений и т.п.), публикуем
@@ -226,7 +252,15 @@ public class HbkTreeParser {
                 .properties(properties)
                 .events(events)
                 .constructors(constructors)
-                .description(description)
+                .description(pageInfo.getDescription())
+                .notes(pageInfo.getNotes())
+                .availabilities(mapAvailabilities(pageInfo.getAvailabilities()))
+                .sinceVersion(pageInfo.getSinceVersion())
+                .deprecatedSinceVersion(pageInfo.getDeprecatedSinceVersion())
+                .examples(List.copyOf(pageInfo.getExamples()))
+                .seeAlso(List.copyOf(pageInfo.getSeeAlso()))
+                .recommendedReplacements(List.copyOf(pageInfo.getRecommendedReplacements()))
+                .pagePath(PageSource.normalize(page.htmlPath()))
                 .rawCollectionElementTypes(collection.rawElementTypes())
                 .supportsForEach(collection.supportsForEach())
                 .forEachDescription(collection.forEachDescription())
@@ -241,9 +275,47 @@ public class HbkTreeParser {
                 .events(events)
                 .constructors(constructors)
                 .formParameters(formParameters)
-                .description(description)
+                .description(pageInfo.getDescription())
+                .notes(pageInfo.getNotes())
+                .availabilities(mapAvailabilities(pageInfo.getAvailabilities()))
+                .sinceVersion(pageInfo.getSinceVersion())
+                .deprecatedSinceVersion(pageInfo.getDeprecatedSinceVersion())
+                .examples(List.copyOf(pageInfo.getExamples()))
+                .seeAlso(List.copyOf(pageInfo.getSeeAlso()))
+                .recommendedReplacements(List.copyOf(pageInfo.getRecommendedReplacements()))
+                .pagePath(PageSource.normalize(page.htmlPath()))
                 .build());
         }
+    }
+
+    /**
+     * Имя контекста: приоритет у заголовка самой страницы
+     * ({@code V8SH_pagetitle}), оглавление — запасной вариант.
+     * <p>
+     * В оглавлении узел назван относительно родителя: под «Поле ввода» лежит
+     * узел «Расширение», хотя страница называется «Расширение поля ввода
+     * системного перечисления». Такое имя вне дерева бессмысленно и вдобавок
+     * не уникально — в 8.3.27 так названы 209 из 2420 страниц-типов.
+     * <p>
+     * Заголовок уточняет ту сторону имени, на языке которой он написан:
+     * в {@code shcntx_ru.hbk} он вида «Имя (Name)» и задаёт обе стороны, а в
+     * {@code shcntx_root.hbk} — только английский, и тогда он уточняет alias.
+     * Иначе имена ru- и en-провайдеров разъехались бы, и
+     * {@link com.github._1c_syntax.bsl.context.platform.BilingualMerger}
+     * перестал бы сопоставлять контексты по имени.
+     */
+    private static ContextName contextName(Page page, String pageTitleRu, String pageTitleEn) {
+        var tocRu = page.title().ru();
+        var tocEn = page.title().en();
+        if (pageTitleRu == null || pageTitleRu.isBlank()) {
+            return new ContextName(tocRu, tocEn);
+        }
+        if (HtmlParser.hasCyrillic(tocRu) != HtmlParser.hasCyrillic(pageTitleRu)) {
+            // Заголовок на языке alias'а (en-HBK) — уточняем только его.
+            return new ContextName(tocRu, pageTitleRu);
+        }
+        var en = pageTitleEn == null || pageTitleEn.isBlank() ? tocEn : pageTitleEn;
+        return new ContextName(pageTitleRu, en);
     }
 
     private void visitEnumPage(Page page) {
@@ -256,8 +328,17 @@ public class HbkTreeParser {
             ? null
             : new ContextName(rawValueType, "");
         var builder = PlatformContextEnum.builder()
-            .name(new ContextName(page.title().ru(), page.title().en()))
-            .values(properties);
+            .name(contextName(page, pageDesc.getPageTitleRu(), pageDesc.getPageTitleEn()))
+            .values(properties)
+            .description(pageDesc.getDescription())
+            .notes(pageDesc.getNotes())
+            .availabilities(mapAvailabilities(pageDesc.getAvailabilities()))
+            .sinceVersion(pageDesc.getSinceVersion())
+            .deprecatedSinceVersion(pageDesc.getDeprecatedSinceVersion())
+            .examples(List.copyOf(pageDesc.getExamples()))
+            .seeAlso(List.copyOf(pageDesc.getSeeAlso()))
+            .recommendedReplacements(List.copyOf(pageDesc.getRecommendedReplacements()))
+            .pagePath(PageSource.normalize(page.htmlPath()));
         if (valueType != null) {
             builder.valueType(valueType);
         }
@@ -327,6 +408,8 @@ public class HbkTreeParser {
             .deprecatedSinceVersion(constructorDescription.getDeprecatedSinceVersion())
             .syntaxText(constructorDescription.getSyntaxText())
             .recommendedReplacements(List.copyOf(constructorDescription.getRecommendedReplacements()))
+            .examples(List.copyOf(constructorDescription.getExamples()))
+            .seeAlso(List.copyOf(constructorDescription.getSeeAlso()))
             .build();
     }
 
@@ -344,6 +427,9 @@ public class HbkTreeParser {
                     .sinceVersion(methodDescription.getSinceVersion())
                     .deprecatedSinceVersion(methodDescription.getDeprecatedSinceVersion())
                     .recommendedReplacements(List.copyOf(methodDescription.getRecommendedReplacements()))
+                    .notes(methodDescription.getNotes())
+                    .examples(List.copyOf(methodDescription.getExamples()))
+                    .seeAlso(List.copyOf(methodDescription.getSeeAlso()))
                     .build();
 
             })
@@ -415,6 +501,7 @@ public class HbkTreeParser {
                     .sinceVersion(description.getSinceVersion())
                     .deprecatedSinceVersion(description.getDeprecatedSinceVersion())
                     .recommendedReplacements(List.copyOf(description.getRecommendedReplacements()))
+                    .seeAlso(List.copyOf(description.getSeeAlso()))
                     .build();
 
             })
@@ -443,6 +530,8 @@ public class HbkTreeParser {
                     .sinceVersion(propertyDescription.getSinceVersion())
                     .deprecatedSinceVersion(propertyDescription.getDeprecatedSinceVersion())
                     .recommendedReplacements(List.copyOf(propertyDescription.getRecommendedReplacements()))
+                    .notes(propertyDescription.getNotes())
+                    .seeAlso(List.copyOf(propertyDescription.getSeeAlso()))
                     .build();
 
             })

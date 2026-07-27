@@ -42,6 +42,21 @@ public interface ContextConstructor {
     /**
      * Имена, рекомендованные в качестве замены устаревшего конструктора.
      */
+    /**
+     * Примеры кода со страницы конструктора — блоки «Пример:».
+     */
+    default List<String> examples() {
+        return List.of();
+    }
+
+    /**
+     * Имена связанных контекстов и их членов — блок «См. также:»
+     * (члены квалифицированы владельцем: {@code Владелец.Член}).
+     */
+    default List<String> seeAlso() {
+        return List.of();
+    }
+
     default List<String> recommendedReplacements() {
         return List.of();
     }

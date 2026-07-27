@@ -19,10 +19,31 @@ public class PlatformContextEvent implements ContextEvent{
   private final String deprecatedSinceVersion = "";
   @Builder.Default
   private final List<String> recommendedReplacements = List.of();
+  @Builder.Default
+  private final String notes = "";
+  @Builder.Default
+  private final List<String> examples = List.of();
+  @Builder.Default
+  private final List<String> seeAlso = List.of();
 
   @Override
   public ContextName name() {
     return name;
+  }
+
+  @Override
+  public String notes() {
+    return notes;
+  }
+
+  @Override
+  public List<String> examples() {
+    return List.copyOf(examples);
+  }
+
+  @Override
+  public List<String> seeAlso() {
+    return List.copyOf(seeAlso);
   }
 
   @Override

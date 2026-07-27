@@ -22,10 +22,24 @@ public class PlatformContextConstructor implements ContextConstructor {
     private final String syntaxText = "";
     @Builder.Default
     private final List<String> recommendedReplacements = List.of();
+    @Builder.Default
+    private final List<String> examples = List.of();
+    @Builder.Default
+    private final List<String> seeAlso = List.of();
 
     @Override
     public ContextName name() {
         return name;
+    }
+
+    @Override
+    public List<String> examples() {
+        return List.copyOf(examples);
+    }
+
+    @Override
+    public List<String> seeAlso() {
+        return List.copyOf(seeAlso);
     }
 
     @Override

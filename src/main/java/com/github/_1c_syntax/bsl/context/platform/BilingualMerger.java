@@ -2,6 +2,7 @@ package com.github._1c_syntax.bsl.context.platform;
 
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
+import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextEvent;
 import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextLanguageKeyword;
@@ -43,10 +44,15 @@ public final class BilingualMerger {
      */
     public static void merge(ContextProvider ru, ContextProvider en) {
         var enIndex = indexByName(en);
+        // Основной ключ — путь страницы в HBK: он одинаков в ru и en, тогда как
+        // имена расходятся (в оглавлении имя контекстное, а на ru-странице
+        // в скобках может стоять устаревший английский вариант).
+        var enByPath = indexByPagePath(en);
         var ruProv = ru instanceof PlatformContextProvider p ? p : null;
 
         for (Context ruCtx : ru.getContexts()) {
-            var enCtx = lookup(enIndex, ruCtx.name());
+            var enCtx = enByPath.get(pagePathOf(ruCtx));
+            if (enCtx == null) enCtx = lookup(enIndex, ruCtx.name());
             if (enCtx == null) continue;
 
             if (ruProv != null) {
@@ -67,19 +73,20 @@ public final class BilingualMerger {
     }
 
     /**
-     * Полный en-аттачмент к контексту: description + (для коллекций)
-     * forEach/indexAccess. Для языковых ключевых слов
-     * ({@link ContextLanguageKeyword})
-     * — только description (отдельный source — отдельный shlang_*.hbk).
+     * Полный en-аттачмент к контексту: страничные тексты (description, notes,
+     * examples, seeAlso) + для коллекций forEach/indexAccess. Для языковых
+     * ключевых слов ({@link ContextLanguageKeyword}) — {@link EnAttachments#EMPTY}
+     * (отдельный source — отдельный shlang_*.hbk).
      */
     private static EnAttachments attachmentsForType(Context ctx) {
         if (ctx instanceof ContextCollection coll) {
-            return new EnAttachments(coll.description(), "", "",
-                List.of(), List.of(),
+            return new EnAttachments(coll.description(), "", coll.notes(),
+                coll.examples(), coll.seeAlso(),
                 coll.forEachDescription(), coll.indexAccessDescription());
         }
-        if (ctx instanceof ContextType t) {
-            return EnAttachments.ofDescription(t.description());
+        if (ctx instanceof ContextType || ctx instanceof ContextEnum) {
+            return new EnAttachments(ctx.description(), "", ctx.notes(),
+                ctx.examples(), ctx.seeAlso(), "", "");
         }
         // ContextLanguageKeyword'и не приходят в en-shcntx, en-description у них
         // хранится в самом ru-PlatformLanguageKeyword.descriptionEn — LS читает
@@ -104,7 +111,7 @@ public final class BilingualMerger {
 
     private static void mergeMembers(ContextType ruType, ContextType enType, PlatformContextProvider provider) {
         mergeMethodsList(ruType.methods(), enType.methods(), provider);
-        mergeEventsList(ruType.events(), enType.events());
+        mergeEventsList(ruType.events(), enType.events(), provider);
         // Конструкторы — у них параметры тоже в HTML, мержим.
         mergeConstructors(ruType, enType, provider);
         // Свойства типа — описания идут с en-страниц.
@@ -115,10 +122,10 @@ public final class BilingualMerger {
 
     private static void mergeGlobal(PlatformGlobalContext ru, PlatformGlobalContext en, PlatformContextProvider provider) {
         mergeMethodsList(ru.methods(), en.methods(), provider);
-        mergeEventsList(ru.applicationEvents(), en.applicationEvents());
-        mergeEventsList(ru.ordinaryApplicationEvents(), en.ordinaryApplicationEvents());
-        mergeEventsList(ru.sessionModuleEvents(), en.sessionModuleEvents());
-        mergeEventsList(ru.externalConnectionModuleEvents(), en.externalConnectionModuleEvents());
+        mergeEventsList(ru.applicationEvents(), en.applicationEvents(), provider);
+        mergeEventsList(ru.ordinaryApplicationEvents(), en.ordinaryApplicationEvents(), provider);
+        mergeEventsList(ru.sessionModuleEvents(), en.sessionModuleEvents(), provider);
+        mergeEventsList(ru.externalConnectionModuleEvents(), en.externalConnectionModuleEvents(), provider);
         // Глобальные свойства тоже несут описания.
         mergePropertyDescriptions(ru.properties(), en.properties(), provider);
     }
@@ -154,7 +161,8 @@ public final class BilingualMerger {
             var enP = enByName.get(ruP.name().getName());
             if (enP == null) enP = enByName.get(ruP.name().getAlias());
             if (enP == null) continue;
-            provider.putDescriptionEn(ruP, enP.description());
+            provider.putEnAttachments(ruP, new EnAttachments(
+                enP.description(), "", enP.notes(), List.of(), enP.seeAlso(), "", ""));
         }
     }
 
@@ -177,11 +185,13 @@ public final class BilingualMerger {
             var enP = enByName.get(ruP.name().getName());
             if (enP == null) enP = enByName.get(ruP.name().getAlias());
             if (enP == null) continue;
-            provider.putDescriptionEn(ruP, enP.description());
+            provider.putEnAttachments(ruP, new EnAttachments(
+                enP.description(), "", "", List.of(), enP.seeAlso(), "", ""));
         }
     }
 
-    private static void mergeEventsList(List<ContextEvent> ru, List<ContextEvent> en) {
+    private static void mergeEventsList(List<ContextEvent> ru, List<ContextEvent> en,
+                                        PlatformContextProvider provider) {
         var enByName = new HashMap<String, ContextEvent>(en.size() * 2);
         for (var e : en) {
             enByName.put(e.name().getName(), e);
@@ -191,7 +201,11 @@ public final class BilingualMerger {
             var enE = enByName.get(ruE.name().getName());
             if (enE == null) enE = enByName.get(ruE.name().getAlias());
             if (enE == null) continue;
-            mergeSignatures(ruE.signatures(), enE.signatures(), null);
+            if (provider != null) {
+                provider.putEnAttachments(ruE, new EnAttachments(
+                    enE.description(), "", enE.notes(), enE.examples(), enE.seeAlso(), "", ""));
+            }
+            mergeSignatures(ruE.signatures(), enE.signatures(), provider);
         }
     }
 
@@ -262,7 +276,8 @@ public final class BilingualMerger {
             var ruC = ruCs.get(i);
             var enC = enCs.get(i);
             if (provider != null) {
-                provider.putDescriptionEn(ruC, enC.description());
+                provider.putEnAttachments(ruC, new EnAttachments(
+                    enC.description(), "", "", enC.examples(), enC.seeAlso(), "", ""));
             }
             var ruP = ruC.parameters();
             var enP = enC.parameters();
@@ -290,6 +305,29 @@ public final class BilingualMerger {
         }
         // В en-провайдере имя приходит из en-HBK как "ru"-имя (en-имя там основное).
         return new ContextName(ruName.getName(), enName.getName());
+    }
+
+    /**
+     * Индекс {@code путь страницы → контекст}. Пути есть только у контекстов из
+     * shcntx (у shlang-примитивов и keyword'ов их нет — они матчатся по имени).
+     */
+    private static Map<String, Context> indexByPagePath(ContextProvider provider) {
+        var map = new HashMap<String, Context>();
+        for (var c : provider.getContexts()) {
+            var path = pagePathOf(c);
+            if (!path.isEmpty()) {
+                map.putIfAbsent(path, c);
+            }
+        }
+        return map;
+    }
+
+    /** Путь исходной HBK-страницы контекста; пусто, если контекст не из shcntx. */
+    private static String pagePathOf(Context ctx) {
+        if (ctx instanceof PlatformContextType t) return t.pagePath();
+        if (ctx instanceof PlatformContextCollection c) return c.pagePath();
+        if (ctx instanceof PlatformContextEnum e) return e.pagePath();
+        return "";
     }
 
     private static Map<String, Context> indexByName(ContextProvider provider) {

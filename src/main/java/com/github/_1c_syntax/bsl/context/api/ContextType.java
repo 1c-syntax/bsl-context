@@ -50,7 +50,13 @@ public interface ContextType extends Context {
      * {@code shcntx_*.hbk}, для примитивов — {@code shlang_*.hbk}
      * (страница {@code def_*}). Если блока «Описание:» на странице нет
      * (редкий случай) — пустая строка.
+     * <p>
+     * Прочие «страничные» метаданные типа — {@link #availabilities()},
+     * {@link #sinceVersion()}, {@link #deprecatedSinceVersion()},
+     * {@link #notes()}, {@link #examples()}, {@link #seeAlso()} — объявлены
+     * в {@link Context}.
      */
+    @Override
     default String description() {
         return "";
     }

@@ -31,6 +31,8 @@ public class PlatformContextFormParameter implements ContextFormParameter {
     private final List<String> recommendedReplacements = List.of();
     @Builder.Default
     private final List<String> rawTypes = List.of();
+    @Builder.Default
+    private final List<String> seeAlso = List.of();
     private final List<Context> types = new ArrayList<>();
 
     @Override
@@ -66,6 +68,11 @@ public class PlatformContextFormParameter implements ContextFormParameter {
     @Override
     public List<String> recommendedReplacements() {
         return List.copyOf(recommendedReplacements);
+    }
+
+    @Override
+    public List<String> seeAlso() {
+        return List.copyOf(seeAlso);
     }
 
     @Override

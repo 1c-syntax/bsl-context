@@ -38,6 +38,20 @@ class HtmlParserTest {
     }
 
     @Test
+    void parsePropertyPage_NotesAndSeeAlso() throws URISyntaxException {
+        // «Примечание:» после «Описание:» — отдельная заметка, а не хвост
+        // описания; «См. также:» отдаётся квалифицированным именем члена.
+        var property = parsePropertyPage("properties/property_with_notes_and_see_also");
+        assertThat(property.getDescription())
+            .contains("Описание для теста")
+            .doesNotContain("Заметка для теста");
+        assertThat(property.getNotes()).contains("Заметка для теста");
+        // Без pageIndex владелец не подставляется — остаётся имя члена.
+        assertThat(property.getSeeAlso()).containsExactly("Создать");
+        assertThat(property.getTypes()).containsExactly("Булево");
+    }
+
+    @Test
     void parsePropertyPage_Generic() throws URISyntaxException {
         // Свойство с именем-плейсхолдером «<Имя элемента>» — generic. Парсер должен
         // корректно вытащить структурные поля; флаг isGeneric() проверяется на уровне
@@ -222,6 +236,81 @@ class HtmlParserTest {
             .containsExactly("НовыйМетод", "ЕщёОдинМетод");
     }
 
+    // --- заголовок страницы «Имя (Name)» ---
+
+    @Test
+    void splitBilingualTitle() {
+        assertThat(HtmlParser.splitBilingualTitle("Массив (Array)"))
+            .containsExactly("Массив", "Array");
+        // Полное имя расширения — то, ради чего имя берётся со страницы,
+        // а не из оглавления (там узел назван просто «Расширение»).
+        assertThat(HtmlParser.splitBilingualTitle(
+            "Расширение поля ввода системного перечисления (System enumeration text box extension)"))
+            .containsExactly("Расширение поля ввода системного перечисления",
+                "System enumeration text box extension");
+        // Generic: скобки placeholder'ов не мешают.
+        assertThat(HtmlParser.splitBilingualTitle(
+            "СправочникСсылка.<Имя справочника> (CatalogRef.<Catalog name>)"))
+            .containsExactly("СправочникСсылка.<Имя справочника>", "CatalogRef.<Catalog name>");
+        // Вложенные скобки в en-части.
+        assertThat(HtmlParser.splitBilingualTitle("Имя (Name (extra))"))
+            .containsExactly("Имя", "Name (extra)");
+        // Кириллица в скобках — это не перевод, а часть самого имени.
+        assertThat(HtmlParser.splitBilingualTitle("Расширение (устаревшее)"))
+            .containsExactly("Расширение (устаревшее)", "");
+        // en-страница: заголовок без скобок.
+        assertThat(HtmlParser.splitBilingualTitle("ClientApplicationForm"))
+            .containsExactly("ClientApplicationForm", "");
+    }
+
+    // --- type page (страничные метаданные) ---
+
+    @Test
+    void parseTypePage_FullMetadata() throws URISyntaxException {
+        // Страница типа несёт не только «Описание:», но и доступность, версию,
+        // заметку, пример и «См. также:» — всё это должно доезжать до модели.
+        var page = page("/types/type_page_full.html");
+        var info = newParser().parseTypePage(page);
+        assertThat(info.getPageTitleRu()).isEqualTo("Виджет");
+        assertThat(info.getPageTitleEn()).isEqualTo("Widget");
+        assertThat(info.getDescription()).contains("Описание для теста");
+        assertThat(info.getNotes()).contains("Заметка для теста");
+        assertThat(info.getAvailabilities())
+            .containsExactly("Сервер", "толстый клиент", "внешнее соединение");
+        assertThat(info.getSinceVersion()).isEqualTo("8.1");
+        assertThat(info.getDeprecatedSinceVersion()).isEmpty();
+        assertThat(info.getExamples()).hasSize(1);
+        assertThat(info.getExamples().get(0)).contains("Новый Виджет()");
+        // Пара <a> «владелец + член» отдаётся одной записью: type-ссылка —
+        // владелец следующего члена, поэтому не дублируется. Квалификация
+        // «Владелец.Член» требует pageIndex (см. отдельный тест на методах),
+        // без него остаётся голое имя члена.
+        assertThat(info.getSeeAlso()).containsExactly("Создать");
+        // Навигационные чаптеры «Методы:»/«Конструкторы:» в текст не попадают.
+        assertThat(info.getDescription()).doesNotContain("Добавить", "По имени");
+        assertThat(info.getCollectionInfo().isEmpty()).isTrue();
+    }
+
+    @Test
+    void parseTypePage_Deprecated() throws URISyntaxException {
+        var info = newParser().parseTypePage(page("/types/type_page_deprecated.html"));
+        assertThat(info.getSinceVersion()).isEqualTo("8.0");
+        assertThat(info.getDeprecatedSinceVersion()).isEqualTo("8.3");
+        assertThat(info.getRecommendedReplacements()).containsExactly("Виджет");
+        assertThat(info.getExamples()).isEmpty();
+    }
+
+    // --- enum page (страничные метаданные) ---
+
+    @Test
+    void parseEnumPage_PageMetadata() throws URISyntaxException {
+        // У перечисления страница такая же, как у типа: описание + доступность.
+        var description = newParser().parseEnumPage(page("/enums/enum_page_with_value_type_ru.html"));
+        assertThat(description.getValueType()).isEqualTo("Картинка");
+        assertThat(description.getDescription()).contains("Определяет набор тестовых объектов");
+        assertThat(description.getAvailabilities()).containsExactly("Сервер");
+    }
+
     // --- form parameters ---
 
     @Test
@@ -340,6 +429,22 @@ class HtmlParserTest {
         assertThat(ctor.getParameters().get(0))
             .hasFieldOrPropertyWithValue("name", "Имя")
             .hasFieldOrPropertyWithValue("isRequired", true)
+            .hasFieldOrPropertyWithValue("types", List.of("Строка"));
+    }
+
+    @Test
+    void parseConstructorPage_ExampleAndSeeAlso() throws URISyntaxException {
+        // На странице конструктора есть «Пример:» и «См. также:» — раньше они
+        // игнорировались. Блока «Доступность:» у конструкторов в HBK нет.
+        var ctor = parseConstructorPage("constructors/ctor_with_example");
+        assertThat(ctor.getExamples()).hasSize(1);
+        assertThat(ctor.getExamples().get(0)).contains("Новый Виджет(\"Основной\")");
+        assertThat(ctor.getSeeAlso()).containsExactly("Создать");
+        // Параметры и синтаксис по-прежнему на месте.
+        assertThat(ctor.getSyntaxText()).contains("Новый Виджет(<Имя>)");
+        assertThat(ctor.getParameters()).hasSize(1);
+        assertThat(ctor.getParameters().get(0))
+            .hasFieldOrPropertyWithValue("name", "Имя")
             .hasFieldOrPropertyWithValue("types", List.of("Строка"));
     }
 

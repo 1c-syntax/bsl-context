@@ -1,6 +1,7 @@
 package com.github._1c_syntax.bsl.context.platform;
 
 import java.util.Map;
+import com.github._1c_syntax.bsl.context.api.Availability;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextConstructor;
@@ -34,6 +35,23 @@ public class PlatformContextCollection implements ContextCollection {
     private final List<ContextProperty> properties;
     @Builder.Default
     private final String description = "";
+    @Builder.Default
+    private final String notes = "";
+    @Builder.Default
+    private final List<Availability> availabilities = List.of();
+    @Builder.Default
+    private final String sinceVersion = "";
+    @Builder.Default
+    private final String deprecatedSinceVersion = "";
+    @Builder.Default
+    private final List<String> examples = List.of();
+    @Builder.Default
+    private final List<String> seeAlso = List.of();
+    @Builder.Default
+    private final List<String> recommendedReplacements = List.of();
+    /** Путь страницы в HBK — ключ сопоставления ru↔en, см. {@link PlatformContextType}. */
+    @Builder.Default
+    private final String pagePath = "";
     private final List<String> rawCollectionElementTypes;
     private final List<Context> collectionElementTypes = new ArrayList<>();
     private final boolean supportsForEach;
@@ -76,6 +94,46 @@ public class PlatformContextCollection implements ContextCollection {
     @Override
     public String description() {
         return description;
+    }
+
+    @Override
+    public String notes() {
+        return notes;
+    }
+
+    @Override
+    public List<Availability> availabilities() {
+        return List.copyOf(availabilities);
+    }
+
+    @Override
+    public String sinceVersion() {
+        return sinceVersion;
+    }
+
+    @Override
+    public String deprecatedSinceVersion() {
+        return deprecatedSinceVersion;
+    }
+
+    @Override
+    public List<String> examples() {
+        return List.copyOf(examples);
+    }
+
+    @Override
+    public List<String> seeAlso() {
+        return List.copyOf(seeAlso);
+    }
+
+    @Override
+    public List<String> recommendedReplacements() {
+        return List.copyOf(recommendedReplacements);
+    }
+
+    /** @see PlatformContextType#pagePath() */
+    public String pagePath() {
+        return pagePath;
     }
 
     @Override

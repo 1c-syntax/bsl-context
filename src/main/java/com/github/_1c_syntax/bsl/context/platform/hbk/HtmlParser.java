@@ -487,31 +487,230 @@ public class HtmlParser {
   }
 
   /**
-   * Извлекает текст блока «Описание:» с главной HTML-страницы типа
-   * (например, {@code .../catalog234/Map.html}). Структура страницы:
-   * <pre>{@code
-   * <p class="V8SH_chapter">Описание:</p>
-   * <p>Представляет доступ к соответствию.<br>...</p>
-   * }</pre>
-   * Если блок не найден — пустая строка.
+   * Разбирает главную HTML-страницу типа / коллекции
+   * (например, {@code .../catalog234/Map.html}) — «страничные» секции
+   * («Описание:», «Примечание:», «Доступность:», «Пример:», «См. также:»,
+   * version-info) плюс блок «Элементы коллекции:».
+   * <p>
+   * Навигационные чаптеры («Свойства:», «Методы:», «События:»,
+   * «Конструкторы:», «Параметры формы:») — это оглавление членов, которое
+   * мы берём из дерева HBK, поэтому в текст они не попадают.
+   * <p>
+   * Страница парсится ровно один раз: раньше на каждый тип приходилось
+   * два независимых jsoup-parse (описание + элементы коллекции).
    */
   @SneakyThrows
-  protected String parseTypePageDescription(Page page) {
+  protected TypePageDescription parseTypePage(Page page) {
+    var result = new TypePageDescription();
     if (page.htmlPath() == null || page.htmlPath().isEmpty()) {
-      return "";
+      return result;
     }
     var document = pageSource.parse(page.htmlPath());
-    for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
-      var t = chapter.text().trim();
-      if ("Описание:".equals(t) || "Description:".equals(t)) {
-        var next = chapter.nextElementSibling();
-        if (next != null) {
-          return next.text().trim();
+    parsePageSections(document, result);
+    result.collectionInfo = parseCollectionInfo(document);
+    return result;
+  }
+
+  /**
+   * Разбирает «страничные» секции главной страницы контекста — общие для
+   * типа, коллекции и перечисления. Разметка плоская: чаптер
+   * {@code <p class="V8SH_chapter">} открывает секцию, следующий чаптер её
+   * закрывает.
+   * <p>
+   * «Примечание:» трактуется так же, как на member-страницах: если
+   * «Описание:» уже встречалось — это отдельная заметка ({@code notes}),
+   * иначе — само описание.
+   */
+  private void parsePageSections(Document document, PageDescription sink) {
+    var descriptionSection = false;
+    var notesSection = false;
+    var availabilitySection = false;
+    var exampleSection = false;
+    var seeAlsoSection = false;
+    var descriptionSeen = false;
+    var seeAlso = new SeeAlsoCollector();
+
+    for (Node node : document.body().childNodes()) {
+      var isChapter = node.attr("class").equals("V8SH_chapter") && node instanceof Element;
+
+      if (node.attr("class").equals("V8SH_pagetitle") && node instanceof Element n
+          && sink.pageTitleRu.isEmpty()) {
+        var parts = splitBilingualTitle(n.text());
+        sink.pageTitleRu = parts[0];
+        sink.pageTitleEn = parts[1];
+      }
+
+      if (descriptionSection && !isChapter) {
+        sink.description = sink.description.concat(getDescription(node));
+      }
+
+      if (notesSection && !isChapter) {
+        sink.notes = sink.notes.concat(getDescription(node));
+      }
+
+      if (availabilitySection && !isChapter) {
+        var text = "";
+        if (node instanceof TextNode n) {
+          text = n.text();
+        } else if (node instanceof Element n) {
+          text = textBeforeFirstBr(n);
         }
-        return "";
+        if (!text.isBlank()) {
+          sink.availabilities = splitAvailabilities(text);
+          availabilitySection = false;
+        }
+      }
+
+      if (exampleSection && !isChapter && node instanceof Element n) {
+        // Пример лежит в <TABLE> с <font>-разметкой; берём чистый текст.
+        var snippet = n.wholeText().trim();
+        if (!snippet.isBlank()) {
+          sink.examples.add(snippet);
+        }
+      }
+
+      if (seeAlsoSection && !isChapter
+          && node instanceof Element n && "a".equalsIgnoreCase(n.tag().getName())) {
+        seeAlso.accept(n);
+      }
+
+      if (node.attr("class").equals("V8SH_versionInfo") && node instanceof Element n) {
+        var versionText = n.text();
+        if (isSinceVersionText(versionText)) {
+          sink.sinceVersion = parseSinceVersion(versionText);
+        } else if (isDeprecatedSinceVersionText(versionText)) {
+          sink.deprecatedSinceVersion = parseSinceVersion(versionText);
+        }
+      }
+
+      if (isChapter && node instanceof Element n) {
+        if (seeAlsoSection) {
+          seeAlso.flush(sink.seeAlso);
+        }
+        var t = n.text();
+        var tt = t.trim();
+        var isDescriptionHeader = t.contains("Описание:") || t.contains("Description:");
+        var isNote = t.contains("Примечание:");
+        descriptionSeen = descriptionSeen || isDescriptionHeader;
+        descriptionSection = isDescriptionHeader || (isNote && !descriptionSeen);
+        notesSection = "Замечание:".equals(tt) || "Note:".equals(tt) || (isNote && descriptionSeen);
+        availabilitySection = t.contains("Доступность:") || t.contains("Availability:");
+        exampleSection = "Пример:".equals(tt) || "Example:".equals(tt);
+        seeAlsoSection = "См. также:".equals(tt) || "See also:".equals(tt);
       }
     }
-    return "";
+    seeAlso.flush(sink.seeAlso);
+    sink.recommendedReplacements = findRecommendedReplacements(document);
+  }
+
+  /**
+   * Разбирает заголовок страницы вида {@code «Имя (Name)»} на пару ru/en.
+   * <p>
+   * Скобки ищутся с конца с учётом вложенности: en-часть сама может содержать
+   * скобки. Если хвост в скобках содержит кириллицу — это не перевод, а часть
+   * самого имени ({@code «Расширение (устар.)»}), тогда весь заголовок
+   * считается ru-именем. Generic-имена
+   * ({@code «СправочникСсылка.<Имя справочника> (CatalogRef.<Catalog name>)»})
+   * разбираются штатно.
+   *
+   * @return массив из двух элементов: ru-имя и en-имя (второе может быть пустым)
+   */
+  static String[] splitBilingualTitle(String title) {
+    var t = title == null ? "" : title.trim();
+    if (t.isEmpty() || !t.endsWith(")")) {
+      return new String[]{t, ""};
+    }
+    var depth = 0;
+    var open = -1;
+    for (int i = t.length() - 1; i >= 0; i--) {
+      var c = t.charAt(i);
+      if (c == ')') {
+        depth++;
+      } else if (c == '(') {
+        depth--;
+        if (depth == 0) {
+          open = i;
+          break;
+        }
+      }
+    }
+    if (open <= 0) {
+      return new String[]{t, ""};
+    }
+    var ru = t.substring(0, open).trim();
+    var en = t.substring(open + 1, t.length() - 1).trim();
+    if (ru.isEmpty() || en.isEmpty() || hasCyrillic(en)) {
+      return new String[]{t, ""};
+    }
+    return new String[]{ru, en};
+  }
+
+  /** Есть ли в строке кириллические буквы. */
+  static boolean hasCyrillic(String s) {
+    if (s == null) {
+      return false;
+    }
+    for (int i = 0; i < s.length(); i++) {
+      var c = s.charAt(i);
+      if (c >= 'А' && c <= 'я' || c == 'ё' || c == 'Ё') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Копит ссылки секции «См. также:». Ссылка на член кодируется парой
+   * {@code <a>}: сначала тип-владелец, затем сам член; член уже несёт
+   * владельца через {@code href}, поэтому предшествующую type-ссылку того же
+   * владельца не дублируем. Standalone type-ссылку (без следующего члена)
+   * отдаём как имя типа.
+   */
+  private final class SeeAlsoCollector {
+    private final List<String> collected = new ArrayList<>();
+    private String pendingText;
+    private String pendingPath;
+
+    private void accept(Element anchor) {
+      var href = anchor.attr("href");
+      var text = anchor.text().trim();
+      if (text.isBlank()) {
+        return;
+      }
+      var path = hrefToPath(href);
+      var markerIdx = path == null ? -1 : memberMarkerIndex(path);
+      if (markerIdx < 0) {
+        // Ссылка на тип: держим до следующей — вдруг она на его член.
+        flushPending();
+        pendingText = text;
+        pendingPath = path;
+        return;
+      }
+      var ownerPath = path.substring(0, markerIdx) + ".html";
+      if (ownerPath.equals(pendingPath)) {
+        // pending — владелец этого члена, не дублируем.
+        pendingText = null;
+        pendingPath = null;
+      } else {
+        flushPending();
+      }
+      collected.add(qualifyReference(href, text));
+    }
+
+    /** Переносит накопленное в {@code sink}; коллектор снова пуст. */
+    private void flush(List<String> sink) {
+      flushPending();
+      sink.addAll(collected);
+      collected.clear();
+    }
+
+    private void flushPending() {
+      if (pendingText != null) {
+        collected.add(pendingText);
+        pendingText = null;
+        pendingPath = null;
+      }
+    }
   }
 
   /**
@@ -565,12 +764,7 @@ public class HtmlParser {
    * <p>
    * Если блока на странице нет — {@link TypePageCollectionInfo#EMPTY}.
    */
-  @SneakyThrows
-  protected TypePageCollectionInfo parseTypePageCollectionInfo(Page page) {
-    if (page.htmlPath() == null || page.htmlPath().isEmpty()) {
-      return TypePageCollectionInfo.EMPTY;
-    }
-    var document = pageSource.parse(page.htmlPath());
+  private static TypePageCollectionInfo parseCollectionInfo(Document document) {
     for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
       var t = chapter.text().trim();
       if (!"Элементы коллекции:".equals(t) && !"Collection elements:".equals(t)) {
@@ -700,21 +894,27 @@ public class HtmlParser {
   }
 
   /**
-   * Разбирает главную страницу enum-«библиотеки» — извлекает общий тип
-   * значений из фразы {@code Значения этого набора имеют тип X.}.
-   * См. {@link ContextEnum#valueType()}.
-   * Для «обычных» системных перечислений ({@code ВидДвиженияНакопления}
-   * и т.п.) такой фразы на странице нет — поле {@code valueType} остаётся
-   * пустой строкой.
+   * Разбирает главную страницу системного перечисления: «страничные» секции
+   * (описание, доступность, версии, «См. также:», «Пример:») плюс общий тип
+   * значений enum-«библиотеки» из фразы
+   * {@code Значения этого набора имеют тип X.} — см.
+   * {@link ContextEnum#valueType()}.
    * <p>
-   * Поиск ведётся по полному тексту страницы регулярным выражением, а не по
-   * DOM-структуре с {@code V8SH_chapter}-секциями: маркер встречается внутри
-   * абзаца описания, где разметка непоследовательная между разными HBK-страницами.
+   * Навигационный чаптер «Значения» с перечнем самих значений в текст не
+   * попадает — значения приходят из дерева HBK.
+   * <p>
+   * Для «обычных» системных перечислений ({@code ВидДвиженияНакопления}
+   * и т.п.) фразы про общий тип на странице нет — поле {@code valueType}
+   * остаётся пустой строкой. Поиск ведётся по полному тексту страницы
+   * регулярным выражением, а не по DOM-структуре с {@code V8SH_chapter}-секциями:
+   * маркер встречается внутри абзаца описания, где разметка непоследовательная
+   * между разными HBK-страницами.
    */
   @SneakyThrows
   protected EnumDescription parseEnumPage(Page page) {
     final var document = pageSource.parse(page.htmlPath());
     var result = new EnumDescription();
+    parsePageSections(document, result);
     var bodyText = document.body().text();
     var m = ENUM_VALUE_TYPE_PATTERN.matcher(bodyText);
     if (m.find()) {
@@ -787,6 +987,10 @@ public class HtmlParser {
     var typeSection = false;
     var collectionElementSection = false;
     var availabilitySection = false;
+    var notesSection = false;
+    var seeAlsoSection = false;
+    var descriptionSeen = false;
+    var seeAlso = new SeeAlsoCollector();
 
     for (Node node : document.body().childNodes()) {
 
@@ -855,6 +1059,23 @@ public class HtmlParser {
 
       }
 
+      if (notesSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          notesSection = false;
+        } else {
+          result.notes = result.notes.concat(getDescription(node));
+        }
+      }
+
+      if (seeAlsoSection) {
+        if (node.attr("class").equals("V8SH_chapter")) {
+          seeAlso.flush(result.seeAlso);
+          seeAlsoSection = false;
+        } else if (node instanceof Element n && "a".equalsIgnoreCase(n.tag().getName())) {
+          seeAlso.accept(n);
+        }
+      }
+
       if (availabilitySection) {
 
         var text = "";
@@ -887,17 +1108,22 @@ public class HtmlParser {
               && node instanceof Element n) {
 
         var t = n.text();
+        var tt = t.trim();
+        var isDescriptionHeader = t.contains("Описание:") || t.contains("Description:");
+        // «Примечание:» — отдельная заметка, если «Описание:» на странице уже
+        // было; иначе примечание и есть описание (как в parseMethodPage).
+        var isNote = t.contains("Примечание:");
+        descriptionSeen = descriptionSeen || isDescriptionHeader;
         accessModeSection = t.contains("Использование:") || t.contains("Usage:");
-        descriptionSection = t.contains("Описание:") || t.contains("Примечание:")
-            || t.contains("Description:");
+        descriptionSection = isDescriptionHeader || (isNote && !descriptionSeen);
+        notesSection = "Замечание:".equals(tt) || "Note:".equals(tt) || (isNote && descriptionSeen);
         availabilitySection = t.contains("Доступность:") || t.contains("Availability:");
-
-        if (t.contains("Примечание:")) {
-          result.description = result.description.concat("\n");
-        }
+        seeAlsoSection = "См. также:".equals(tt) || "See also:".equals(tt);
 
       }
     }
+
+    seeAlso.flush(result.seeAlso);
 
     return result;
 
@@ -1314,6 +1540,9 @@ public class HtmlParser {
     var isParameters = false;
     var isTypeSection = false;
     var isSyntax = false;
+    var isExample = false;
+    var isSeeAlso = false;
+    var seeAlso = new SeeAlsoCollector();
 
     for (Node node : document.body().childNodes()) {
       final var className = node.hasAttr("class") ? node.attr("class") : "";
@@ -1333,15 +1562,39 @@ public class HtmlParser {
       }
 
       if (className.equals("V8SH_chapter") && node instanceof Element n) {
+        if (isSeeAlso) {
+          seeAlso.flush(result.seeAlso);
+        }
         isDescription = false;
         isParameters = false;
         isTypeSection = false;
         isSyntax = false;
+        isExample = false;
+        isSeeAlso = false;
 
         switch (n.text().trim()) {
           case "Параметры:", "Parameters:" -> isParameters = true;
           case "Описание:", "Description:" -> isDescription = true;
           case "Синтаксис:", "Syntax:" -> isSyntax = true;
+          case "Пример:", "Example:" -> isExample = true;
+          case "См. также:", "See also:" -> isSeeAlso = true;
+        }
+        continue;
+      }
+
+      if (isExample) {
+        if (node instanceof Element n) {
+          var snippet = n.wholeText().trim();
+          if (!snippet.isBlank()) {
+            result.examples.add(snippet);
+          }
+        }
+        continue;
+      }
+
+      if (isSeeAlso) {
+        if (node instanceof Element n && "a".equalsIgnoreCase(n.tag().getName())) {
+          seeAlso.accept(n);
         }
         continue;
       }
@@ -1413,6 +1666,7 @@ public class HtmlParser {
     }
 
     applyVariadicMarkers(result.parameters);
+    seeAlso.flush(result.seeAlso);
 
     return result;
   }
@@ -1432,16 +1686,57 @@ public class HtmlParser {
     return text;
   }
 
+  /**
+   * Общие «страничные» поля, которые несёт любая страница синтакс-помощника:
+   * описание, заметка, доступность, версии, «См. также:», «Пример:» и
+   * рекомендации по замене. Заполняются {@link #parsePageSections(Document, PageDescription)}.
+   */
+  @Getter
+  protected abstract static class PageDescription {
+    /**
+     * Имя с заголовка страницы ({@code V8SH_pagetitle}), ru-сторона.
+     * В оглавлении HBK имя узла контекстно относительно родителя
+     * («Поле ввода» → «Расширение»), а на самой странице стоит полное
+     * («Расширение поля ввода системного перечисления»), поэтому имя контекста
+     * берётся отсюда — см. {@code HbkTreeParser#contextName}.
+     */
+    protected String pageTitleRu = "";
+    /** Имя с заголовка страницы, en-сторона (часть в скобках). */
+    protected String pageTitleEn = "";
+    protected String description = "";
+    protected String notes = "";
+    protected List<String> availabilities = Collections.emptyList();
+    protected String sinceVersion = "";
+    protected String deprecatedSinceVersion = "";
+    protected final List<String> seeAlso = new ArrayList<>();
+    protected final List<String> examples = new ArrayList<>();
+    protected List<String> recommendedReplacements = Collections.emptyList();
+  }
+
+  /**
+   * Главная страница типа / коллекции: страничные поля + блок
+   * «Элементы коллекции:».
+   */
+  @Getter
+  protected static class TypePageDescription extends PageDescription {
+    private TypePageCollectionInfo collectionInfo = TypePageCollectionInfo.EMPTY;
+
+    protected TypePageDescription() {
+    }
+  }
+
   @Getter
   protected static class PropertyDescription {
     private String accessMode = "";
     private final List<String> types = new ArrayList<>();
     private final List<String> rawCollectionElementTypes = new ArrayList<>();
     private String description = "";
+    private String notes = "";
     private List<String> availabilities = Collections.emptyList();
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
     private List<String> recommendedReplacements = Collections.emptyList();
+    private final List<String> seeAlso = new ArrayList<>();
 
     protected PropertyDescription() {
     }
@@ -1463,10 +1758,12 @@ public class HtmlParser {
     private final String sinceVersion;
     private final String deprecatedSinceVersion;
     private final List<String> recommendedReplacements;
+    private final List<String> seeAlso;
 
     private FormParameterDescription(PropertyDescription raw) {
       this.types = raw.getTypes();
       this.description = raw.getDescription();
+      this.seeAlso = raw.getSeeAlso();
       this.key = isKeyParameterMarker(raw.getAccessMode());
       this.sinceVersion = raw.getSinceVersion();
       this.deprecatedSinceVersion = raw.getDeprecatedSinceVersion();
@@ -1551,13 +1848,17 @@ public class HtmlParser {
     private String sinceVersion = "";
     private String deprecatedSinceVersion = "";
     private List<String> recommendedReplacements = Collections.emptyList();
+    // Блока «Доступность:» на страницах конструкторов в HBK нет (проверено по
+    // всем 444 страницам ctors/ платформы 8.3.27) — поля под него не держим.
+    private final List<String> examples = new ArrayList<>();
+    private final List<String> seeAlso = new ArrayList<>();
 
     private ConstructorDescription() {
     }
   }
 
   @Getter
-  protected static class EnumDescription {
+  protected static class EnumDescription extends PageDescription {
     private String valueType = "";
 
     private EnumDescription() {
