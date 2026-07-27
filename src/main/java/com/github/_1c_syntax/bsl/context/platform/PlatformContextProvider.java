@@ -132,6 +132,15 @@ public class PlatformContextProvider implements ContextProvider {
         return storage.getContextByName(name);
     }
 
+    /**
+     * Все контексты с указанным именем — берутся из индекса хранилища, без
+     * перебора всего списка (в отличие от default-реализации интерфейса).
+     */
+    @Override
+    public List<Context> getContextsByName(String name) {
+        return storage.getContextsByName(name);
+    }
+
     @Override
     public PlatformGlobalContext getGlobalContext() {
       return storage.getGlobalContext();

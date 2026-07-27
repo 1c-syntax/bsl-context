@@ -2,6 +2,7 @@ package com.github._1c_syntax.bsl.context.smoke;
 
 import com.github._1c_syntax.bsl.context.PlatformContextGrabber;
 import com.github._1c_syntax.bsl.context.PlatformFinder;
+import com.github._1c_syntax.bsl.context.api.Availability;
 import com.github._1c_syntax.bsl.context.api.Context;
 import com.github._1c_syntax.bsl.context.api.ContextCollection;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
@@ -19,6 +20,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -260,13 +262,16 @@ class RealHbkSmokeTest {
                 .isNotBlank();
         }
 
-        // Расширение формы для справочника («Расширение справочника» в СП) —
-        // ключевой параметр «Ключ» с generic-типом СправочникСсылка.<…>:
-        // проверяем, что резолвятся не только примитивы.
+        // Расширение формы для справочника — ключевой параметр «Ключ» с
+        // generic-типом СправочникСсылка.<…>: проверяем, что резолвятся не
+        // только примитивы. Имя берётся с заголовка страницы («Расширение формы
+        // клиентского приложения для справочника»), в оглавлении узел назван
+        // короче — «Расширение справочника».
         // Страница этого типа единственная в HBK, чьё имя файла подпадало под
         // старую эвристику isCatalogPage («…extension for catalogs.html»), из-за
         // чего весь тип молча терялся — здесь заодно и регрессионная проверка.
-        var catalogFormExt = provider.getContextByName("Расширение справочника")
+        var catalogFormExt = provider
+            .getContextByName("Расширение формы клиентского приложения для справочника")
             .orElse(null);
         assertThat(catalogFormExt)
             .as("тип «Расширение справочника» должен присутствовать в модели")
@@ -293,6 +298,137 @@ class RealHbkSmokeTest {
         // У обычных типов секции нет — список пуст, но не null.
         assertThat(((ContextType) provider.getContextByName("Массив").orElseThrow()).formParameters())
             .isEmpty();
+
+        // === Имя берётся с заголовка страницы, а не из оглавления ===
+        // В оглавлении узел назван относительно родителя («Поле ввода» →
+        // «Расширение»), что вне дерева бессмысленно и неуникально.
+        assertThat(provider.getContextByName("Расширение поля ввода системного перечисления"))
+            .as("имя типа — полное, с заголовка страницы")
+            .isPresent();
+        assertThat(provider.getContextByName("Расширение"))
+            .as("контекстное имя из оглавления больше не публикуется")
+            .isEmpty();
+        assertThat(provider.getContextByName("Расширение поля формы для поля картинки")).isPresent();
+        assertThat(provider.getContextByName("Расширение декорации формы для картинки")).isPresent();
+        // Обычные типы, перечисления и generic'и от этого не пострадали.
+        assertThat(provider.getContextByName("Массив")).isPresent();
+        assertThat(provider.getContextByName("ГруппировкаКолонок")).isPresent();
+        assertThat(provider.getContexts())
+            .as("generic-имена разбираются штатно (скобки в них — не en-часть)")
+            .anyMatch(c -> c.name().getName().startsWith("СправочникСсылка.<"));
+        assertThat(provider.getContexts())
+            .as("в имя не должна попадать en-часть заголовка «Имя (Name)»")
+            .noneMatch(c -> c.name().getName().contains("("));
+
+        // Дублей имён должно стать заметно меньше, чем при именах из оглавления
+        // (там их было 27); оставшиеся — честные омонимы платформы.
+        var duplicateRuNames = provider.getContexts().stream()
+            .collect(Collectors.groupingBy(
+                c -> c.name().getName().toLowerCase(), Collectors.counting()))
+            .values().stream().filter(n -> n > 1).count();
+        assertThat(duplicateRuNames).isLessThanOrEqualTo(12);
+
+        // Омонимы: «Расширение элементов управления, расположенных в форме» есть
+        // и для обычных форм (8.0, 11 свойств), и для управляемых (8.2). Имена
+        // совпадают целиком, поэтому getContextByName отдаёт какой-то один —
+        // все доступны через getContextsByName.
+        var homonyms = provider.getContextsByName(
+            "Расширение элементов управления, расположенных в форме");
+        assertThat(homonyms).as("омонимы не теряются").hasSize(2);
+        assertThat(homonyms).extracting(Context::sinceVersion)
+            .containsExactlyInAnyOrder("8.0", "8.2");
+        assertThat(provider.getContextByName(
+            "Расширение элементов управления, расположенных в форме")).isPresent();
+        // У типа без омонимов список из одного элемента.
+        assertThat(provider.getContextsByName("Массив")).hasSize(1);
+        assertThat(provider.getContextsByName("Array")).hasSize(1);
+        assertThat(provider.getContextsByName("НетТакогоТипа")).isEmpty();
+
+        // Одна страница HBK — один контекст. В оглавлении PlannerCommandSource.html
+        // висит двумя узлами («ИсточникКомандПланировщика» и
+        // «ИсточникКомандПоляПланировщика»), но тип это один.
+        assertThat(provider.getContexts())
+            .filteredOn(c -> "ИсточникКомандПоляПланировщика".equals(c.name().getName()))
+            .as("страница, включённая в оглавление дважды, даёт один контекст")
+            .hasSize(1);
+        assertThat(provider.getContexts())
+            .filteredOn(c -> "СтандартнаяКомандаПоляПланировщика".equals(c.name().getName()))
+            .hasSize(1);
+
+        // === Страничные метаданные типа ===
+        // Со страницы типа снимаются не только «Описание:», но и доступность,
+        // версия появления, «Пример:» и «См. также:».
+        var arrayCtx = (ContextType) provider.getContextByName("Массив").orElseThrow();
+        assertThat(arrayCtx.sinceVersion())
+            .as("Массив доступен с 8.0 — версия со страницы типа")
+            .isEqualTo("8.0");
+        assertThat(arrayCtx.availabilities())
+            .as("доступность типа со страницы «Доступность:»")
+            .contains(Availability.SERVER, Availability.THIN_CLIENT, Availability.THICK_CLIENT);
+        assertThat(arrayCtx.examples())
+            .as("на странице Массив есть блок «Пример:»")
+            .isNotEmpty();
+        assertThat(arrayCtx.deprecatedSinceVersion()).isEmpty();
+
+        // Не единичный случай: версии и доступность должны быть у большинства типов.
+        var typesWithVersion = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .filter(t -> !t.sinceVersion().isBlank())
+            .count();
+        assertThat(typesWithVersion)
+            .as("версия появления снимается со страниц типов массово")
+            .isGreaterThan(1000);
+        var typesWithAvailability = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .filter(t -> !t.availabilities().isEmpty())
+            .count();
+        assertThat(typesWithAvailability).isGreaterThan(1000);
+        var typesWithSeeAlso = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .filter(t -> !t.seeAlso().isEmpty())
+            .count();
+        assertThat(typesWithSeeAlso).isGreaterThan(100);
+
+        // === Страничные метаданные перечисления ===
+        var columnsGroup = provider.getContextByName("ГруппировкаКолонок").orElseThrow();
+        assertThat(columnsGroup).isInstanceOf(ContextEnum.class);
+        assertThat(columnsGroup.description())
+            .as("описание перечисления со страницы")
+            .contains("группировки колонок");
+        assertThat(columnsGroup.availabilities()).contains(Availability.SERVER);
+        assertThat(columnsGroup.sinceVersion()).isEqualTo("8.2");
+        assertThat(columnsGroup.seeAlso())
+            .as("«См. также:» перечисления квалифицируется владельцем")
+            .isNotEmpty();
+
+        // === Заметки / примеры / «См. также» у членов ===
+        // События: «Примечание:» и «См. также:» раньше парсились и терялись.
+        var formEvents = ((ContextType) caf).events();
+        assertThat(formEvents)
+            .as("у события формы должна быть хотя бы одна заметка")
+            .anyMatch(e -> !e.notes().isBlank());
+        assertThat(formEvents).anyMatch(e -> !e.seeAlso().isEmpty());
+
+        // Конструкторы: «Пример:» и «См. также:» (блока «Доступность:» у них в HBK нет).
+        var allConstructors = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .flatMap(t -> t.constructors().stream())
+            .toList();
+        assertThat(allConstructors).anyMatch(c -> !c.examples().isEmpty());
+        assertThat(allConstructors).anyMatch(c -> !c.seeAlso().isEmpty());
+
+        // Свойства: «См. также:» и отделённая заметка.
+        var allProperties = provider.getContexts().stream()
+            .filter(ContextType.class::isInstance)
+            .map(ContextType.class::cast)
+            .flatMap(t -> t.properties().stream())
+            .toList();
+        assertThat(allProperties).anyMatch(p -> !p.seeAlso().isEmpty());
+        assertThat(allProperties).anyMatch(p -> !p.notes().isBlank());
 
         // === Generic-методы: возврат должен резолвиться ===
         // HtmlParser в секции «Возвращаемое значение:» аккумулирует фрагменты

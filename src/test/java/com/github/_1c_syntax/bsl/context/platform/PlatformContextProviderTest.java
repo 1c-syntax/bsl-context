@@ -251,6 +251,61 @@ class PlatformContextProviderTest {
     }
 
     @Test
+    void getContextsByNameReturnsAllHomonyms() {
+        // У платформы есть омонимы — разные типы с совпадающими ru- и en-именами
+        // («Расширение элементов управления, расположенных в форме» для обычных
+        // и для управляемых форм). getContextByName отдаёт какой-то один из них,
+        // getContextsByName — все.
+        var ordinary = PlatformContextType.builder()
+            .name(new ContextName("Расширение", "Extension"))
+            .methods(Collections.emptyList())
+            .properties(List.of(PlatformContextProperty.builder()
+                .name(new ContextName("Свойство", "Property"))
+                .accessMode(AccessMode.READ)
+                .availabilities(List.of(Availability.THICK_CLIENT))
+                .description("")
+                .rawTypes(Collections.emptyList())
+                .build()))
+            .events(Collections.emptyList())
+            .constructors(Collections.emptyList())
+            .pagePath("objects/catalog56/Extension.html")
+            .build();
+        var managed = PlatformContextType.builder()
+            .name(new ContextName("Расширение", "Extension"))
+            .methods(Collections.emptyList())
+            .properties(Collections.emptyList())
+            .events(Collections.emptyList())
+            .constructors(Collections.emptyList())
+            .pagePath("objects/catalog1649/Extension.html")
+            .build();
+
+        var storage = new PlatformContextStorage(new ArrayList<>(List.of(ordinary, managed)));
+        var provider = new PlatformContextProvider(storage);
+
+        assertThat(provider.getContextsByName("Расширение"))
+            .containsExactlyInAnyOrder(ordinary, managed);
+        assertThat(provider.getContextsByName("extension"))
+            .as("поиск регистронезависимый и работает по en-имени")
+            .containsExactlyInAnyOrder(ordinary, managed);
+        assertThat(provider.getContextByName("Расширение"))
+            .as("одиночный резолв по-прежнему отдаёт один контекст")
+            .isPresent();
+        assertThat(provider.getContextsByName("НетТакого")).isEmpty();
+        assertThat(provider.getContextsByName(null)).isEmpty();
+    }
+
+    @Test
+    void getContextsByNameDoesNotDuplicateWhenRuEqualsEn() {
+        // У типов вроде COMSafeArray ru- и en-имена совпадают: контекст
+        // индексируется дважды, но в выдаче должен быть один раз.
+        var type = createSimpleType("COMSafeArray", "COMSafeArray");
+        var storage = new PlatformContextStorage(new ArrayList<>(List.of(type)));
+        var provider = new PlatformContextProvider(storage);
+
+        assertThat(provider.getContextsByName("comsafearray")).containsExactly(type);
+    }
+
+    @Test
     void globalContextIsRemovedFromContextsList() {
         var globalContext = PlatformGlobalContext.builder()
             .methods(Collections.emptyList())
