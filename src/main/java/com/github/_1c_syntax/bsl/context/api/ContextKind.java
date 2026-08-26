@@ -15,6 +15,10 @@ package com.github._1c_syntax.bsl.context.api;
  *   <li>{@link #ENUM} — системное перечисление платформы и его значения.</li>
  *   <li>{@link #GLOBAL_CONTEXT} — глобальный контекст: top-level методы,
  *       свойства, события.</li>
+ *   <li>{@link #QUERY_TABLE} — таблица языка запросов и её поля
+ *       ({@code Справочник.<Имя справочника>},
+ *       {@code РегистрНакопления.<Имя регистра накопления>.Остатки}).
+ *       Приходит из ветки «Таблицы запросов» {@code shcntx_*.hbk}.</li>
  *   <li>{@link #LANGUAGE_KEYWORD} — языковая конструкция встроенного языка:
  *       литерал ({@code Истина}, {@code Ложь}), оператор ({@code Если},
  *       {@code Для}), объявление ({@code Процедура}, {@code Функция}),
@@ -24,5 +28,5 @@ package com.github._1c_syntax.bsl.context.api;
  * </ul>
  */
 public enum ContextKind {
-    PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD
+    PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD, QUERY_TABLE
 }

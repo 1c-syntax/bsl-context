@@ -12,6 +12,8 @@ import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTable;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTableField;
 import com.github._1c_syntax.bsl.context.api.ContextType;
 
 import java.util.HashMap;
@@ -64,6 +66,8 @@ public final class BilingualMerger {
                 mergeMembers(ruType, enType, ruProv);
             } else if (ruCtx instanceof ContextEnum ruEnum && enCtx instanceof ContextEnum enEnum) {
                 mergeEnumValueDescriptions(ruEnum.values(), enEnum.values(), ruProv);
+            } else if (ruCtx instanceof ContextQueryTable ruTable && enCtx instanceof ContextQueryTable enTable) {
+                mergeQueryTableFieldDescriptions(ruTable.fields(), enTable.fields(), ruProv);
             }
         }
 
@@ -87,7 +91,7 @@ public final class BilingualMerger {
                 coll.examples(), coll.seeAlso(),
                 coll.forEachDescription(), coll.indexAccessDescription());
         }
-        if (ctx instanceof ContextType || ctx instanceof ContextEnum) {
+        if (ctx instanceof ContextType || ctx instanceof ContextEnum || ctx instanceof ContextQueryTable) {
             return new EnAttachments(ctx.description(), "", ctx.notes(),
                 ctx.examples(), ctx.seeAlso(), "", "");
         }
@@ -217,6 +221,32 @@ public final class BilingualMerger {
             if (enV == null) enV = enByName.get(ruV.name().getAlias());
             if (enV == null) continue;
             provider.putDescriptionEn(ruV, enV.description());
+        }
+    }
+
+    /**
+     * Прокидывает en-описания полям таблицы языка запросов.
+     * {@link ContextQueryTable} — не {@link ContextType}, поэтому её поля
+     * через {@code mergeMembers} не проходят.
+     * <p>
+     * Матчим по имени: у ru-поля имя двуязычно, у en-поля заполнена только
+     * одна сторона, и совпасть она может с любой из двух.
+     */
+    private static void mergeQueryTableFieldDescriptions(
+            List<ContextQueryTableField> ru,
+            List<ContextQueryTableField> en,
+            PlatformContextProvider provider) {
+        if (provider == null || ru == null || en == null) return;
+        var enByName = new HashMap<String, ContextQueryTableField>(en.size() * 2);
+        for (var f : en) {
+            enByName.put(f.name().getName(), f);
+            enByName.put(f.name().getAlias(), f);
+        }
+        for (var ruF : ru) {
+            var enF = enByName.get(ruF.name().getName());
+            if (enF == null) enF = enByName.get(ruF.name().getAlias());
+            if (enF == null) continue;
+            provider.putDescriptionEn(ruF, enF.description());
         }
     }
 
@@ -357,6 +387,7 @@ public final class BilingualMerger {
         if (ctx instanceof PlatformContextType t) return t.pagePath();
         if (ctx instanceof PlatformContextCollection c) return c.pagePath();
         if (ctx instanceof PlatformContextEnum e) return e.pagePath();
+        if (ctx instanceof PlatformContextQueryTable t) return t.pagePath();
         return "";
     }
 

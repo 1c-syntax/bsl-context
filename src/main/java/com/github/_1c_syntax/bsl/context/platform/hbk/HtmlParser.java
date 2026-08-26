@@ -57,6 +57,8 @@ public class HtmlParser {
   private static final Pattern EVENT_PARAM_NAME_PATTERN = Pattern.compile("<([^>]+)>");
   private static final Pattern SINCE_VERSION_PATTERN = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?(?:\\.\\d+)?)");
   private static final Pattern DEFAULT_VALUE_PATTERN = Pattern.compile("Значение по умолчанию:\\n?\\s*([^.\\n]+?)\\.");
+  /** {@code <…>}-плейсхолдер в имени: имя объекта метаданных, которое платформа не переводит. */
+  private static final Pattern PLACEHOLDER = Pattern.compile("<[^<>]*>");
 
   /**
    * Маркеры обязательности параметра в {@code (...)} после имени.
@@ -654,7 +656,10 @@ public class HtmlParser {
     }
     var ru = t.substring(0, open).trim();
     var en = t.substring(open + 1, t.length() - 1).trim();
-    if (ru.isEmpty() || en.isEmpty() || hasCyrillic(en)) {
+    // Кириллица внутри плейсхолдера английскую сторону не порочит: у таблиц
+    // запросов заголовок выглядит как «Справочник.<Имя справочника>
+    // (Catalog.<Имя справочника>)» — имя объекта платформа не переводит.
+    if (ru.isEmpty() || en.isEmpty() || hasCyrillic(withoutPlaceholders(en))) {
       return new String[]{t, ""};
     }
     return new String[]{ru, en};
@@ -746,6 +751,11 @@ public class HtmlParser {
   /** Убирает из описания повисший маркер «Пример:». */
   private static String stripTrailingExampleMarker(String description) {
     return TRAILING_EXAMPLE_MARKER.matcher(description.stripTrailing()).replaceAll("").stripTrailing();
+  }
+
+  /** Текст без {@code <…>}-плейсхолдеров. */
+  private static String withoutPlaceholders(String text) {
+    return PLACEHOLDER.matcher(text).replaceAll("");
   }
 
   /** Есть ли в строке кириллические буквы. */
@@ -1260,6 +1270,98 @@ public class HtmlParser {
    */
   protected FormParameterDescription parseFormParameterPage(Page page) {
     return new FormParameterDescription(parsePropertyPage(page));
+  }
+
+  /**
+   * Разбирает страницу поля таблицы языка запросов
+   * ({@code tables/table58/fields/Completed437.html}).
+   * <p>
+   * Разметка проще, чем у свойства: описание идёт прямо в теле страницы, без
+   * чаптера «Описание:», и начинается ведущим «Тип: …» — если тип у поля
+   * вообще указан. Единственный чаптер, который встречается, — «Примечание:»
+   * / «Note:». Поэтому тип берётся как текст между маркером «Тип:» и первым
+   * переводом строки, описание — как остаток до чаптера или подвала, а всё,
+   * что идёт после чаптера, — как заметка.
+   *
+   * @param page страница поля.
+   * @return имя, тип, описание и заметка поля.
+   */
+  @SneakyThrows
+  protected QueryTableFieldDescription parseQueryTableFieldPage(Page page) {
+    final var document = pageSource.parse(page.htmlPath());
+    var result = new QueryTableFieldDescription();
+
+    var type = new StringBuilder();
+    var description = new StringBuilder();
+    var notes = new StringBuilder();
+    var afterTypeMarker = false;
+    var typeDone = false;
+    var notesSection = false;
+    var chapterSeen = false;
+
+    for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        break;
+      }
+
+      if (node instanceof Element element) {
+        var className = element.attr("class");
+        if (className.equals("V8SH_pagetitle")) {
+          var parts = splitBilingualTitle(element.text());
+          result.pageTitleRu = parts[0];
+          result.pageTitleEn = parts[1];
+          continue;
+        }
+        if (className.equals("V8SH_heading")) {
+          continue;
+        }
+        if (className.equals("V8SH_chapter")) {
+          var title = element.text().trim();
+          chapterSeen = true;
+          notesSection = title.contains("Примечание:") || title.contains("Note:");
+          continue;
+        }
+        if (element.tag().equals(Tag.valueOf("br"))) {
+          typeDone = typeDone || afterTypeMarker;
+          continue;
+        }
+      }
+
+      String text;
+      if (node instanceof Element element) {
+        text = element.text();
+      } else if (node instanceof TextNode textNode) {
+        text = textNode.text();
+      } else {
+        continue;
+      }
+
+      if (!afterTypeMarker && containsTypeMarker(text)) {
+        afterTypeMarker = true;
+        var idx = indexOfTypeMarker(text);
+        text = text.substring(idx + typeMarkerLength(text, idx));
+      }
+
+      if (notesSection) {
+        notes.append(text);
+      } else if (!chapterSeen) {
+        (afterTypeMarker && !typeDone ? type : description).append(text);
+      }
+    }
+
+    result.type = withoutTrailingDot(type.toString());
+    result.description = description.toString().trim();
+    result.notes = notes.toString().trim();
+    return result;
+  }
+
+  /** Убирает хвостовую точку, завершающую строку типа на странице поля. */
+  private static String withoutTrailingDot(String raw) {
+    var value = raw.trim();
+    while (value.endsWith(".")) {
+      value = value.substring(0, value.length() - 1).trim();
+    }
+    return value;
   }
 
   /**
@@ -1909,6 +2011,28 @@ public class HtmlParser {
       this.sinceVersion = raw.getSinceVersion();
       this.deprecatedSinceVersion = raw.getDeprecatedSinceVersion();
       this.recommendedReplacements = raw.getRecommendedReplacements();
+    }
+
+  }
+
+  /**
+   * Поле таблицы языка запросов, снятое со страницы вида
+   * {@code tables/table58/fields/Completed437.html}.
+   */
+  @Getter
+  protected static class QueryTableFieldDescription {
+    /** Имя с заголовка страницы ({@code V8SH_pagetitle}), ru-сторона. */
+    protected String pageTitleRu = "";
+    /** То же, en-сторона. */
+    protected String pageTitleEn = "";
+    /** Тип поля как он записан в синтакс-помощнике, без разбора на составляющие. */
+    protected String type = "";
+    /** Описание поля. */
+    protected String description = "";
+    /** Заметка со страницы поля — чаптер «Примечание:» / «Note:». */
+    protected String notes = "";
+
+    protected QueryTableFieldDescription() {
     }
 
   }

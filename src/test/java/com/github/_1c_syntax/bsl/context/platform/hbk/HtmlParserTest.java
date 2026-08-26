@@ -494,7 +494,85 @@ class HtmlParserTest {
             .hasFieldOrPropertyWithValue("isRequired", false);
     }
 
+    // --- поля таблиц языка запросов ---
+
+    @Test
+    void parseQueryTableFieldPage_MultipleTypes() throws URISyntaxException {
+        // when
+        var field = parseQueryTableFieldPage("querytablefields/field_plain");
+
+        // then
+        assertThat(field)
+            .hasFieldOrPropertyWithValue("pageTitleRu", "Номер")
+            .hasFieldOrPropertyWithValue("pageTitleEn", "Number")
+            .hasFieldOrPropertyWithValue("type", "Число, Строка")
+            .hasFieldOrPropertyWithValue("description", "Описание для теста.")
+            .hasFieldOrPropertyWithValue("notes", "");
+    }
+
+    @Test
+    void parseQueryTableFieldPage_GenericType() throws URISyntaxException {
+        // when
+        // Тип поля шаблонный: имя объекта метаданных подставляет потребитель,
+        // парсер обязан донести плейсхолдер без потерь.
+        var field = parseQueryTableFieldPage("querytablefields/field_generic_type");
+
+        // then
+        assertThat(field)
+            .hasFieldOrPropertyWithValue("pageTitleRu", "Ссылка")
+            .hasFieldOrPropertyWithValue("pageTitleEn", "Ref")
+            .hasFieldOrPropertyWithValue("type", "ВиджетСсылка.<Имя виджета>");
+    }
+
+    @Test
+    void parseQueryTableFieldPage_GenericName() throws URISyntaxException {
+        // when
+        // Шаблонное имя записано без двуязычной пары, поэтому en-сторона со
+        // страницы не берётся: её даёт слияние с англоязычным помощником.
+        var field = parseQueryTableFieldPage("querytablefields/field_generic_name");
+
+        // then
+        assertThat(field)
+            .hasFieldOrPropertyWithValue("pageTitleRu", "<Имя реквизита виджета>")
+            .hasFieldOrPropertyWithValue("pageTitleEn", "")
+            .hasFieldOrPropertyWithValue("type", "Произвольный");
+    }
+
+    @Test
+    void parseQueryTableFieldPage_WithoutTypeAndWithNotes() throws URISyntaxException {
+        // when
+        // У части полей блока «Тип:» на странице нет; «Примечание:» —
+        // отдельная заметка, а не хвост описания.
+        var field = parseQueryTableFieldPage("querytablefields/field_without_type_with_notes");
+
+        // then
+        assertThat(field)
+            .hasFieldOrPropertyWithValue("type", "")
+            .hasFieldOrPropertyWithValue("notes", "Заметка для теста.");
+        assertThat(field.getDescription())
+            .isEqualTo("Описание для теста.");
+    }
+
+    @Test
+    void parseQueryTableFieldPage_En() throws URISyntaxException {
+        // when
+        var field = parseQueryTableFieldPage("querytablefields/field_en");
+
+        // then
+        assertThat(field)
+            .hasFieldOrPropertyWithValue("pageTitleRu", "WidgetFlag")
+            .hasFieldOrPropertyWithValue("pageTitleEn", "")
+            .hasFieldOrPropertyWithValue("type", "Boolean")
+            .hasFieldOrPropertyWithValue("description", "Test description.")
+            .hasFieldOrPropertyWithValue("notes", "Test note.");
+    }
+
     // --- helpers ---
+
+    HtmlParser.QueryTableFieldDescription parseQueryTableFieldPage(String relativePath) throws URISyntaxException {
+        var page = page("/%s.html".formatted(relativePath));
+        return newParser().parseQueryTableFieldPage(page);
+    }
 
     HtmlParser.ConstructorDescription parseConstructorPage(String relativePath) throws URISyntaxException {
         var page = page("/%s.html".formatted(relativePath));

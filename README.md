@@ -62,6 +62,17 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
     `ANNOTATION`, `PREPROCESSOR_INSTRUCTION`) +
     `LanguageKeywordSnippet` (двуязычный шаблон автодополнения
     с плейсхолдерами `<?>`);
+  - `ContextQueryTable` / `ContextQueryTableField` — **таблицы языка
+    запросов** и их поля: то, что можно поставить в секцию `ИЗ`
+    (`Справочник.<Имя справочника>`,
+    `РегистрНакопления.<Имя регистра накопления>.Остатки`,
+    `Справочник.<Имя справочника>.Изменения`). Часть имени, которую
+    задаёт конфигурация, остаётся плейсхолдером и материализуется
+    потребителем; тип поля отдаётся сырой строкой (`rawValueType()`),
+    потому что тоже бывает шаблонным. У таблиц регистра бухгалтерии
+    заполнен `correspondence()`: платформа описывает их дважды — с
+    поддержкой корреспонденции и без, — с разными наборами полей и
+    одним и тем же именем;
   - `KnownStandardAttributes` — стандартные реквизиты MD-объектов
     (`Ссылка`, `ПометкаУдаления`, `Проведен`, …) по типу-владельцу:
     их состав знает только платформа, в СП и mdclasses его нет.
@@ -333,7 +344,8 @@ PlatformContextProvider (реализация)
 
 Context
 ├─ name(): ContextName(ru, en)
-├─ kind(): ContextKind { PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD }
+├─ kind(): ContextKind { PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT,
+│                        LANGUAGE_KEYWORD, QUERY_TABLE }
 ├─ isGeneric(): boolean
 ├─ typeParameters(): List<String>                // «СправочникСсылка.<Имя справочника>» → [Имя справочника]
 ├─ familyCore(): String                          // → «СправочникСсылка»
@@ -430,6 +442,16 @@ ContextEnumValue
 ├─ name(): ContextName
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
 └─ recommendedReplacements(): List<String>
+
+ContextQueryTable extends Context                // страничные метаданные — из Context
+├─ fields(): List<ContextQueryTableField>
+└─ correspondence(): Optional<Boolean>           // только у таблиц регистра бухгалтерии
+
+ContextQueryTableField
+├─ name(): ContextName                           // «Ссылка (Ref)», «<Имя реквизита>»
+├─ rawValueType(): String                        // «Булево», «СправочникСсылка.<Имя справочника>»
+├─ isGeneric(): boolean                          // имя поля шаблонное
+└─ description(), notes(): String
 
 PlatformGlobalContext extends Context
 ├─ methods(): List<ContextMethod>, properties(): List<ContextProperty>

@@ -11,6 +11,7 @@ import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTableField;
 import com.github._1c_syntax.bsl.context.api.ContextSignatureParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextCollection;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextConstructor;
@@ -22,6 +23,8 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextMethod;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextMethodSignature;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProperty;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextQueryTable;
+import com.github._1c_syntax.bsl.context.platform.PlatformContextQueryTableField;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
@@ -35,6 +38,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -146,11 +150,19 @@ public class HbkTreeParser {
     public void visitPagesFromTree(List<Page> pages) {
 
         pages.parallelStream()
-            // страницы-заглушки не интересны в парсере
-            .filter(page -> !page.htmlPath().isEmpty())
+            // страницы-заглушки не интересны в парсере. Исключение — рубрика
+            // «Таблицы запросов»: у неё своей страницы нет, а дети — настоящие
+            // страницы таблиц, и без спуска в неё вся ветка теряется.
+            .filter(page -> !page.htmlPath().isEmpty() || isQueryTablesRubric(page))
             .forEach(page -> {
-                if (isGlobalContextPage(page)) {
+                if (isQueryTablesRubric(page)) {
+                    visitQueryTablesRubric(page, null);
+                } else if (isGlobalContextPage(page)) {
                     visitGlobalContextPage(page);
+                } else if (isQueryTablePage(page)) {
+                    // Обычно таблицы приходят через рубрику; сюда попадает
+                    // только страница таблицы, оказавшаяся вне рубрики.
+                    visitQueryTablePage(page, null);
                 } else if (isCatalogPage(page)) {
                     visitPagesFromTree(page.children());
                 } else if (isEnumPage(page)) {
@@ -314,12 +326,104 @@ public class HbkTreeParser {
             || nodesPerPage.getOrDefault(PageSource.normalize(page.htmlPath()), 1) > 1) {
             return new ContextName(tocRu, tocEn);
         }
-        if (HtmlParser.hasCyrillic(tocRu) != HtmlParser.hasCyrillic(pageTitleRu)) {
+        if (tocRu != null && !tocRu.isBlank()
+            && HtmlParser.hasCyrillic(tocRu) != HtmlParser.hasCyrillic(pageTitleRu)) {
             // Заголовок на языке alias'а (en-HBK) — уточняем только его.
+            // Пустое имя узла языком не является: у страниц таблиц запросов
+            // ru-узел безымянный, и обе стороны надо брать со страницы.
             return new ContextName(tocRu, pageTitleRu);
         }
         var en = pageTitleEn == null || pageTitleEn.isBlank() ? tocEn : pageTitleEn;
         return new ContextName(pageTitleRu, en);
+    }
+
+    /**
+     * Обходит рубрику ветки «Таблицы запросов», прокидывая вниз признак
+     * корреспонденции: у регистра бухгалтерии одноимённые таблицы описаны
+     * дважды, и различает их только заголовок рубрики
+     * (см. {@link #correspondenceOf(Page)}).
+     */
+    private void visitQueryTablesRubric(Page rubric, Boolean correspondence) {
+        var inherited = correspondence == null ? correspondenceOf(rubric) : correspondence;
+        for (var child : rubric.children()) {
+            if (isQueryTablesRubric(child)) {
+                visitQueryTablesRubric(child, inherited);
+            } else if (isQueryTablePage(child)) {
+                visitQueryTablePage(child, inherited);
+            }
+        }
+    }
+
+    /**
+     * Признак корреспонденции по заголовку рубрики. Заголовок в оглавлении
+     * записан на языке HBK: ru — «Таблицы регистра бухгалтерии (с поддержкой
+     * корреспонденции)», en — «Accounting Register Tables (with correspondence
+     * support)». {@code null}, если рубрика не про регистр бухгалтерии.
+     */
+    private static Boolean correspondenceOf(Page rubric) {
+        var title = rubric.title().ru() == null || rubric.title().ru().isBlank()
+            ? rubric.title().en() : rubric.title().ru();
+        if (title == null) {
+            return null;
+        }
+        var lower = title.toLowerCase(Locale.ROOT);
+        if (lower.contains("без поддержки корреспонденции")
+            || lower.contains("without correspondence support")) {
+            return Boolean.FALSE;
+        }
+        if (lower.contains("с поддержкой корреспонденции")
+            || lower.contains("with correspondence support")) {
+            return Boolean.TRUE;
+        }
+        return null;
+    }
+
+    /**
+     * Таблица языка запросов: имя и поля.
+     * <p>
+     * Имя таблицы и имена полей на ru-странице записаны парой
+     * «русское (английское)», поэтому берутся из заголовка страницы тем же
+     * путём, что и у типов — см. {@link #contextName(Page, String, String)}.
+     * Часть имени, которую задаёт конфигурация, остаётся плейсхолдером
+     * ({@code Справочник.<Имя справочника>}) и материализуется потребителем.
+     */
+    private void visitQueryTablePage(Page page, Boolean correspondence) {
+        var pageInfo = htmlParser.parseTypePage(page);
+        contexts.add(PlatformContextQueryTable.builder()
+            .name(contextName(page, pageInfo.getPageTitleRu(), pageInfo.getPageTitleEn()))
+            .fields(getQueryTableFieldsFromPage(page))
+            .correspondence(correspondence)
+            .description(pageInfo.getDescription())
+            .notes(pageInfo.getNotes())
+            .availabilities(mapAvailabilities(pageInfo.getAvailabilities()))
+            .sinceVersion(pageInfo.getSinceVersion())
+            .deprecatedSinceVersion(pageInfo.getDeprecatedSinceVersion())
+            .examples(List.copyOf(pageInfo.getExamples()))
+            .seeAlso(List.copyOf(pageInfo.getSeeAlso()))
+            .recommendedReplacements(List.copyOf(pageInfo.getRecommendedReplacements()))
+            .pagePath(PageSource.normalize(page.htmlPath()))
+            .build());
+    }
+
+    /**
+     * Поля таблицы.
+     * <p>
+     * Тип поля отдаётся сырой строкой: он бывает шаблонным
+     * ({@code БизнесПроцессСсылка.<Имя бизнес-процесса>}), и подставить
+     * в него имя объекта может только потребитель.
+     */
+    private List<ContextQueryTableField> getQueryTableFieldsFromPage(Page page) {
+        return queryTableFieldNodes(page).stream()
+            .map(it -> {
+                var fieldInfo = htmlParser.parseQueryTableFieldPage(it);
+                return (ContextQueryTableField) PlatformContextQueryTableField.builder()
+                    .name(contextName(it, fieldInfo.getPageTitleRu(), fieldInfo.getPageTitleEn()))
+                    .rawValueType(fieldInfo.getType())
+                    .description(fieldInfo.getDescription())
+                    .notes(fieldInfo.getNotes())
+                    .build();
+            })
+            .toList();
     }
 
     private void visitEnumPage(Page page) {
@@ -572,6 +676,59 @@ public class HbkTreeParser {
         }
 
         return CATALOG_PAGE_NAME.matcher(endElement).matches();
+    }
+
+    /**
+     * Рубрика «Таблицы запросов» — узел без своей страницы, дети которого
+     * лежат в ветке {@code tables}. Опознаётся структурой, а не заголовком:
+     * заголовок в ru-оглавлении пуст.
+     */
+    private static boolean isQueryTablesRubric(Page page) {
+        var path = page.htmlPath();
+        if (path != null && !path.isEmpty() || page.children().isEmpty()) {
+            return false;
+        }
+        // Рубрика бывает вложенной: «Таблицы запросов» → «Таблицы регистра
+        // бухгалтерии» → страницы таблиц. Внутри неё не должно быть ничего,
+        // кроме таких же рубрик и страниц ветки tables.
+        for (var child : page.children()) {
+            var childPath = child.htmlPath();
+            var empty = childPath == null || childPath.isEmpty();
+            if (empty ? !isQueryTablesRubric(child)
+                : !PageSource.normalize(childPath).startsWith("tables/")) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Страница таблицы языка запросов ({@code tables/table58.html},
+     * {@code tables/catalog36/table42.html}). Поля лежат не прямыми детьми,
+     * а под безымянной рубрикой «Поля», поэтому проверяется наличие хоть
+     * одного узла {@code /fields/} на два уровня вглубь.
+     */
+    private static boolean isQueryTablePage(Page page) {
+        return PageSource.normalize(page.htmlPath()).startsWith("tables/")
+            && !queryTableFieldNodes(page).isEmpty();
+    }
+
+    /**
+     * Узлы полей таблицы: прямые дети со страницей {@code /fields/…} плюс
+     * дети безымянных рубрик того же узла.
+     */
+    private static List<Page> queryTableFieldNodes(Page page) {
+        var result = new ArrayList<Page>();
+        for (var child : page.children()) {
+            if (PageSource.normalize(child.htmlPath()).contains("/fields/")) {
+                result.add(child);
+            } else if (child.htmlPath() == null || child.htmlPath().isEmpty()) {
+                child.children().stream()
+                    .filter(it -> PageSource.normalize(it.htmlPath()).contains("/fields/"))
+                    .forEach(result::add);
+            }
+        }
+        return result;
     }
 
     private boolean isEnumPage(Page page) {

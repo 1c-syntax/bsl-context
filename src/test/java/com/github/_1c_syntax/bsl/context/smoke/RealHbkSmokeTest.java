@@ -11,6 +11,8 @@ import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextKind;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTable;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTableField;
 import com.github._1c_syntax.bsl.context.api.ContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -324,8 +328,12 @@ class RealHbkSmokeTest {
             .noneMatch(c -> c.name().getName().contains("("));
 
         // Дублей имён должно стать заметно меньше, чем при именах из оглавления
-        // (там их было 27); оставшиеся — честные омонимы платформы.
+        // (там их было 27); оставшиеся — честные омонимы платформы. Таблицы
+        // языка запросов считаются отдельно: у регистра бухгалтерии таблицы с
+        // корреспонденцией и без описаны под одним именем намеренно, см.
+        // assertQueryTables.
         var duplicateRuNames = provider.getContexts().stream()
+            .filter(c -> c.kind() != ContextKind.QUERY_TABLE)
             .collect(Collectors.groupingBy(
                 c -> c.name().getName().toLowerCase(), Collectors.counting()))
             .values().stream().filter(n -> n > 1).count();
@@ -569,6 +577,150 @@ class RealHbkSmokeTest {
         // конструктор Массив описан в СП как «КоличествоЭлементов1[, …]» —
         // нотация ушла. Проверяем только что параметры в принципе есть.
         assertThat(paramNames).isNotEmpty();
+
+        assertQueryTables(provider);
+    }
+
+    /**
+     * Таблицы языка запросов — ветка «Таблицы …» синтакс-помощника.
+     */
+    private static void assertQueryTables(ContextProvider provider) {
+        var queryTables = provider.getContexts().stream()
+            .filter(c -> c.kind() == ContextKind.QUERY_TABLE)
+            .map(ContextQueryTable.class::cast)
+            .toList();
+        assertThat(queryTables)
+            .as("в 8.3.26 таблиц 59 — по одной на каждый вид основной и виртуальной таблицы")
+            .hasSizeGreaterThanOrEqualTo(50);
+        assertThat(queryTables)
+            .extracting(t -> t.name().getName())
+            .contains("Справочник.<Имя справочника>",
+                "Документ.<Имя документа>",
+                "Перечисление.<Имя перечисления>",
+                "РегистрНакопления.<Имя регистра накопления>.Остатки",
+                "РегистрСведений.<Имя регистра сведений>.СрезПоследних",
+                "Справочник.<Имя справочника>.Изменения",
+                "Константы");
+
+        // Имя таблицы шаблонное: платформенная часть двуязычна, имя объекта
+        // метаданных стоит плейсхолдером и подставляется потребителем.
+        var catalogTable = queryTable(queryTables, "Справочник.<Имя справочника>");
+        assertThat(catalogTable.name().getAlias()).isEqualTo("Catalog.<Имя справочника>");
+        assertThat(catalogTable.isGeneric()).isTrue();
+        assertThat(catalogTable.typeParameters()).containsExactly("Имя справочника");
+        assertThat(catalogTable.correspondence())
+            .as("корреспонденция — признак только таблиц регистра бухгалтерии")
+            .isEmpty();
+        assertThat(catalogTable.fields())
+            .extracting(f -> f.name().getName())
+            .contains("Ссылка", "ПометкаУдаления", "Владелец", "ЭтоГруппа",
+                "<Имя реквизита>", "<Имя табличной части>");
+
+        var catalogRef = queryTableField(catalogTable, "Ссылка");
+        assertThat(catalogRef.name().getAlias()).isEqualTo("Ref");
+        assertThat(catalogRef.rawValueType()).isEqualTo("СправочникСсылка.<Имя справочника>");
+        assertThat(catalogRef.isGeneric())
+            .as("плейсхолдер в типе поля — не то же самое, что шаблонное имя поля")
+            .isFalse();
+        assertThat(queryTableField(catalogTable, "<Имя реквизита>").isGeneric()).isTrue();
+        assertThat(queryTableField(catalogTable, "Код").rawValueType()).isEqualTo("Число, Строка");
+
+        // Единственная таблица, у которой в имени нет плейсхолдера.
+        assertThat(queryTable(queryTables, "Константы").isGeneric()).isFalse();
+
+        // Порядок — стандартный реквизит перечисления, а не свойство
+        // динамического списка: у таблицы перечисления он есть, и он Число.
+        var enumTable = queryTable(queryTables, "Перечисление.<Имя перечисления>");
+        assertThat(enumTable.fields())
+            .extracting(f -> f.name().getName())
+            .containsExactlyInAnyOrder("Порядок", "Ссылка");
+        assertThat(queryTableField(enumTable, "Порядок").rawValueType()).isEqualTo("Число");
+
+        // Таблицы регистра бухгалтерии описаны дважды — «с поддержкой
+        // корреспонденции» и «без». Имя у них одно, различает только признак.
+        var accountingRegisterTables = queryTables.stream()
+            .filter(t -> "РегистрБухгалтерии.<Имя регистра бухгалтерии>".equals(t.name().getName()))
+            .toList();
+        assertThat(accountingRegisterTables).hasSize(2);
+        var withCorrespondence = accountingRegisterTables.stream()
+            .filter(t -> t.correspondence().orElse(false))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("таблица регистра бухгалтерии с корреспонденцией не найдена"));
+        var withoutCorrespondence = accountingRegisterTables.stream()
+            .filter(t -> !t.correspondence().orElse(true))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("таблица регистра бухгалтерии без корреспонденции не найдена"));
+        assertThat(withCorrespondence.fields())
+            .extracting(f -> f.name().getName())
+            .contains("СчетДт", "СчетКт", "<Имя ресурса>Дт", "<Имя ресурса>Кт")
+            .doesNotContain("Счет", "ВидДвижения");
+        assertThat(withoutCorrespondence.fields())
+            .extracting(f -> f.name().getName())
+            .contains("Счет", "ВидДвижения")
+            .doesNotContain("СчетДт", "СчетКт");
+
+        // Одноимённые таблицы бывают только у регистра бухгалтерии, и внутри
+        // такой пары признак корреспонденции всегда разный: иначе выбрать
+        // нужную таблицу было бы нечем.
+        queryTables.stream()
+            .collect(Collectors.groupingBy(t -> t.name().getName()))
+            .forEach((name, sameNamed) -> {
+                if (sameNamed.size() > 1) {
+                    assertThat(name).startsWith("РегистрБухгалтерии.");
+                    assertThat(sameNamed)
+                        .extracting(ContextQueryTable::correspondence)
+                        .containsExactlyInAnyOrder(Optional.of(true), Optional.of(false));
+                }
+            });
+
+        // Типы полей снимаются со страниц массово; поля без типа — те, у
+        // которых блока «Тип:» нет в самом синтакс-помощнике.
+        var fields = queryTables.stream().flatMap(t -> t.fields().stream()).toList();
+        assertThat(fields).hasSizeGreaterThan(500);
+        assertThat(fields)
+            .filteredOn(f -> f.rawValueType().isBlank())
+            .hasSizeLessThan(fields.size() / 20);
+        assertThat(fields)
+            .as("описание есть у каждого поля")
+            .allMatch(f -> !f.description().isBlank());
+        assertThat(fields)
+            .as("футер страницы не приклеивается ни к типу, ни к описанию поля")
+            .noneMatch(f -> f.rawValueType().contains("Методическая")
+                || f.description().contains("Методическая информация"));
+
+        // «Примечание:» со страницы поля — отдельная заметка, а не хвост
+        // описания. Заметка уточняет, при каких настройках объекта поле есть.
+        var periodAdjustment = queryTableField(withoutCorrespondence, "УточнениеПериода");
+        assertThat(periodAdjustment.notes()).contains("уточнения периода");
+        assertThat(periodAdjustment.description())
+            .isNotBlank()
+            .doesNotContain(periodAdjustment.notes());
+
+        // en-тексты таблиц и полей приходят из shcntx_root.hbk через
+        // BilingualMerger — таблицы сопоставляются по пути страницы.
+        if (provider instanceof PlatformContextProvider p) {
+            assertThat(p.getDescriptionEn(catalogTable))
+                .as("en-описание таблицы")
+                .isNotBlank();
+            assertThat(p.getDescriptionEn(catalogRef))
+                .as("en-описание поля таблицы")
+                .isNotBlank();
+        }
+    }
+
+    private static ContextQueryTable queryTable(List<ContextQueryTable> tables, String name) {
+        return tables.stream()
+            .filter(t -> name.equals(t.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("query table not found: " + name));
+    }
+
+    private static ContextQueryTableField queryTableField(ContextQueryTable table, String name) {
+        return table.fields().stream()
+            .filter(f -> name.equals(f.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "field %s not found on query table %s".formatted(name, table.name().getName())));
     }
 
     private static void assertCollection(
