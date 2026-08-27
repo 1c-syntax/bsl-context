@@ -12,6 +12,7 @@ import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
+import com.github._1c_syntax.bsl.context.api.QueryContextProvider;
 import com.github._1c_syntax.bsl.context.api.ContextType;
 
 import java.util.HashMap;
@@ -65,6 +66,7 @@ public final class BilingualMerger {
             } else if (ruCtx instanceof ContextEnum ruEnum && enCtx instanceof ContextEnum enEnum) {
                 mergeEnumValueDescriptions(ruEnum.values(), enEnum.values(), ruProv);
             }
+
         }
 
         // Глобальный контекст лежит отдельно.
@@ -338,6 +340,68 @@ public final class BilingualMerger {
     }
 
     /**
+     * Прокидывает en-имена и en-описания таблицам языка запросов, их полям и
+     * параметрам. У запросного контекста нет провайдера-держателя
+     * en-аттачментов, поэтому en-описание живёт в самих объектах —
+     * {@code descriptionEn()}.
+     * Контекст запросов живёт отдельно от контекста встроенного языка, поэтому
+     * и мерж для него отдельный — вызывается из {@code PlatformContextGrabber}
+     * поверх пары {@link QueryContextProvider}.
+     */
+    public static void mergeQueryTables(QueryContextProvider ru, QueryContextProvider en) {
+        var enByPath = new HashMap<String, PlatformQueryTable>();
+        for (var table : en.getTables()) {
+            if (table instanceof PlatformQueryTable t && !t.pagePath().isEmpty()) {
+                enByPath.put(t.pagePath(), t);
+            }
+        }
+        for (var table : ru.getTables()) {
+            if (!(table instanceof PlatformQueryTable ruTable)) continue;
+            var enTable = enByPath.get(ruTable.pagePath());
+            if (enTable == null) continue;
+            ruTable.setDescriptionEn(enTable.description());
+            ruTable.setExamplesEn(enTable.examples());
+            mergeQueryTableMembers(ruTable, enTable);
+        }
+    }
+
+    /**
+     * Прокидывает en-имена и en-описания полям и параметрам таблицы языка
+     * запросов. Сопоставление — по пути страницы члена: в ru-HBK страница
+     * поля называется «Активность (Active)», в en-HBK — «Active», а порядок
+     * в оглавлении отличается (сортировка по локализованному имени).
+     */
+    private static void mergeQueryTableMembers(PlatformQueryTable ru, PlatformQueryTable en) {
+        var enFields = new HashMap<String, PlatformQueryTableField>();
+        for (var f : en.fields()) {
+            if (f instanceof PlatformQueryTableField pf && !pf.pagePath().isEmpty()) {
+                enFields.put(pf.pagePath(), pf);
+            }
+        }
+        for (var f : ru.fields()) {
+            if (!(f instanceof PlatformQueryTableField ruField)) continue;
+            var enField = enFields.get(ruField.pagePath());
+            if (enField == null) continue;
+            ruField.setName(mergedName(ruField.name(), enField.name()));
+            ruField.setDescriptionEn(enField.description());
+        }
+
+        var enParams = new HashMap<String, PlatformQueryTableParameter>();
+        for (var p : en.parameters()) {
+            if (p instanceof PlatformQueryTableParameter pp && !pp.pagePath().isEmpty()) {
+                enParams.put(pp.pagePath(), pp);
+            }
+        }
+        for (var p : ru.parameters()) {
+            if (!(p instanceof PlatformQueryTableParameter ruParam)) continue;
+            var enParam = enParams.get(ruParam.pagePath());
+            if (enParam == null) continue;
+            ruParam.setName(mergedName(ruParam.name(), enParam.name()));
+            ruParam.setDescriptionEn(enParam.description());
+        }
+    }
+
+    /**
      * Индекс {@code путь страницы → контекст}. Пути есть только у контекстов из
      * shcntx (у shlang-примитивов и keyword'ов их нет — они матчатся по имени).
      */
@@ -357,6 +421,7 @@ public final class BilingualMerger {
         if (ctx instanceof PlatformContextType t) return t.pagePath();
         if (ctx instanceof PlatformContextCollection c) return c.pagePath();
         if (ctx instanceof PlatformContextEnum e) return e.pagePath();
+        if (ctx instanceof PlatformQueryTable q) return q.pagePath();
         return "";
     }
 

@@ -540,13 +540,14 @@ public class HtmlParser {
         break;
       }
 
+      var isChapter = node.attr("class").equals("V8SH_chapter") && node instanceof Element;
+
       if (isCodeTable(node)) {
         sink.description = stripTrailingExampleMarker(sink.description);
         addSnippet(sink.examples, node);
         continue;
       }
       extractNestedCodeTables(node, sink.examples);
-      var isChapter = node.attr("class").equals("V8SH_chapter") && node instanceof Element;
 
       if (node.attr("class").equals("V8SH_pagetitle") && node instanceof Element n
           && sink.pageTitleRu.isEmpty()) {
@@ -654,11 +655,17 @@ public class HtmlParser {
     }
     var ru = t.substring(0, open).trim();
     var en = t.substring(open + 1, t.length() - 1).trim();
-    if (ru.isEmpty() || en.isEmpty() || hasCyrillic(en)) {
+    // Кириллица внутри <…> — это placeholder, который в en-имени остаётся
+    // русским: «ExternalDataSource.<Имя внешнего источника данных>.Cube».
+    // Проверяем язык по тексту вне placeholder'ов.
+    if (ru.isEmpty() || en.isEmpty() || hasCyrillic(PLACEHOLDER.matcher(en).replaceAll(""))) {
       return new String[]{t, ""};
     }
     return new String[]{ru, en};
   }
+
+  /** Generic-placeholder в имени: {@code <Имя справочника>}. */
+  private static final Pattern PLACEHOLDER = Pattern.compile("<[^>]*>");
 
   /** Хвостовой маркер «Пример:» перед блоком кода — в описании он лишний. */
   private static final Pattern TRAILING_EXAMPLE_MARKER =
@@ -668,7 +675,8 @@ public class HtmlParser {
    * Горизонтальная линия перед футером страницы. Футер есть на всех 25503
    * страницах shcntx: {@code <HR>} и ссылка «Методическая информация» на
    * сайт 1С. Без обрыва она приклеивается к последней открытой секции —
-   * например к синтаксису конструктора {@code Новый ГрафическаяСхема}.
+   * например к синтаксису конструктора {@code Новый ГрафическаяСхема} или
+   * к описанию поля таблицы запросов.
    */
   private static boolean isFooterSeparator(Node node) {
     return node instanceof Element element && "hr".equalsIgnoreCase(element.tagName());
@@ -1246,6 +1254,187 @@ public class HtmlParser {
     return result;
 
   }
+
+  /**
+   * Разбирает страницу таблицы языка запросов ({@code tables/table28.html}).
+   * <p>
+   * Разметка почти как у типа, но чаптеры «Синтаксис», «Поля» и «Параметры»
+   * идут <b>без двоеточия</b>, а сами поля и параметры — ссылками в этих
+   * блоках (мы берём их из дерева HBK, здесь нужен только «Синтаксис»
+   * и общие страничные секции).
+   */
+  @SneakyThrows
+  protected QueryTablePageDescription parseQueryTablePage(Page page) {
+    var result = new QueryTablePageDescription();
+    if (page.htmlPath() == null || page.htmlPath().isEmpty()) {
+      return result;
+    }
+    var document = pageSource.parse(page.htmlPath());
+    parsePageSections(document, result);
+    result.syntaxText = textOfChapter(document, "Синтаксис", "Syntax");
+    return result;
+  }
+
+  /**
+   * Текст чаптера, заданного без двоеточия («Синтаксис», «Поля»): берём
+   * всё до следующего чаптера.
+   */
+  private static String textOfChapter(Document document, String ru, String en) {
+    for (var chapter : document.select("p.V8SH_chapter, P.V8SH_chapter")) {
+      var t = chapter.text().trim();
+      if (!ru.equals(t) && !en.equals(t)) {
+        continue;
+      }
+      var sb = new StringBuilder();
+      for (Node node = chapter.nextSibling(); node != null; node = node.nextSibling()) {
+        if (node instanceof Element el && "p".equalsIgnoreCase(el.tagName())
+            && el.hasClass("V8SH_chapter")) {
+          break;
+        }
+        if (node instanceof TextNode textNode) {
+          sb.append(textNode.text());
+        } else if (node instanceof Element el) {
+          sb.append(el.text());
+        }
+      }
+      return sb.toString().trim();
+    }
+    return "";
+  }
+
+  /**
+   * Разбирает страницу поля таблицы языка запросов
+   * ({@code tables/table28/fields/Ref136.html}).
+   * <p>
+   * После заголовка сразу идёт «Тип: …», затем описание; чаптеров нет,
+   * кроме опционального «Примечание:».
+   */
+  @SneakyThrows
+  protected QueryTableFieldDescription parseQueryTableFieldPage(Page page) {
+    final var document = pageSource.parse(page.htmlPath());
+    var result = new QueryTableFieldDescription();
+
+    var afterHeading = false;
+    var typeSection = false;
+    var notesSection = false;
+
+    for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+      if (node.attr("class").equals("V8SH_pagetitle") && node instanceof Element n
+          && result.pageTitleRu.isEmpty()) {
+        var parts = splitBilingualTitle(n.text());
+        result.pageTitleRu = parts[0];
+        result.pageTitleEn = parts[1];
+        continue;
+      }
+      if (node.attr("class").equals("V8SH_heading")) {
+        afterHeading = true;
+        continue;
+      }
+      if (node.attr("class").equals("V8SH_chapter") && node instanceof Element n) {
+        var t = n.text();
+        notesSection = t.contains("Примечание:") || t.contains("Note:");
+        afterHeading = false;
+        typeSection = false;
+        continue;
+      }
+      if (notesSection) {
+        result.notes = result.notes.concat(getDescription(node));
+        continue;
+      }
+      if (!afterHeading) {
+        continue;
+      }
+      if (node instanceof TextNode n && containsTypeMarker(n.text())) {
+        typeSection = true;
+        if (containsArbitraryType(n.text())) {
+          result.types.add(ARBITRARY_TYPE_NAME);
+        }
+      } else if (typeSection) {
+        if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+          typeSection = false;
+        } else if (node instanceof Element n) {
+          result.types.add(n.text());
+        } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
+          result.types.add(ARBITRARY_TYPE_NAME);
+        }
+      } else {
+        result.description = result.description.concat(getDescription(node));
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Разбирает страницу параметра виртуальной таблицы
+   * ({@code tables/catalog1/table3/params/param1.html}).
+   * <p>
+   * Имя и обязательность — в единственном чаптере страницы
+   * («Период (необязательный)»), типы — в блоке «Тип параметра:», который
+   * есть не у всех: параметр может принимать выражение языка запросов.
+   */
+  @SneakyThrows
+  protected QueryTableParameterDescription parseQueryTableParameterPage(Page page) {
+    final var document = pageSource.parse(page.htmlPath());
+    var result = new QueryTableParameterDescription();
+
+    var inParameter = false;
+    var typeSection = false;
+
+    for (Node node : document.body().childNodes()) {
+      if (isFooterSeparator(node)) {
+        // Ниже — только «Методическая информация» (ссылка на its).
+        break;
+      }
+      if (node.attr("class").equals("V8SH_chapter") && node instanceof Element n) {
+        var match = QUERY_PARAMETER_TITLE.matcher(n.text().trim());
+        if (match.matches()) {
+          result.name = match.group(1).trim();
+          result.required = isRequiredMarker(match.group(2));
+        } else {
+          result.name = n.text().trim();
+          result.required = true;
+        }
+        inParameter = true;
+        continue;
+      }
+      if (!inParameter) {
+        continue;
+      }
+      if (node instanceof TextNode n && containsParameterTypeMarker(n.text())) {
+        typeSection = true;
+        if (containsArbitraryType(n.text())) {
+          result.types.add(ARBITRARY_TYPE_NAME);
+        }
+      } else if (typeSection) {
+        if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+          typeSection = false;
+        } else if (node instanceof Element n) {
+          result.types.add(n.text());
+        } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
+          result.types.add(ARBITRARY_TYPE_NAME);
+        }
+      } else {
+        result.description = result.description.concat(getDescription(node));
+      }
+    }
+    return result;
+  }
+
+  /** Маркер типов параметра виртуальной таблицы: «Тип параметра:» / «Parameter type:». */
+  private static boolean containsParameterTypeMarker(String text) {
+    return text != null && (text.contains("Тип параметра:") || text.contains("Parameter type:"));
+  }
+
+  /**
+   * Заголовок параметра виртуальной таблицы: {@code «Период (необязательный)»}
+   * — group1 = имя, group2 = маркер обязательности. Без скобок параметр
+   * считается обязательным.
+   */
+  private static final Pattern QUERY_PARAMETER_TITLE = Pattern.compile("(.+?)\\s*\\(([^)]+)\\)");
 
   /**
    * Разбирает страницу параметра формы
@@ -1862,6 +2051,43 @@ public class HtmlParser {
     private TypePageCollectionInfo collectionInfo = TypePageCollectionInfo.EMPTY;
 
     protected TypePageDescription() {
+    }
+  }
+
+  /**
+   * Главная страница таблицы языка запросов: страничные поля + сырая строка
+   * чаптера «Синтаксис». Сами поля и параметры приходят из дерева HBK.
+   */
+  @Getter
+  protected static class QueryTablePageDescription extends PageDescription {
+    private String syntaxText = "";
+
+    protected QueryTablePageDescription() {
+    }
+  }
+
+  /** Страница поля таблицы языка запросов. */
+  @Getter
+  protected static class QueryTableFieldDescription {
+    private String pageTitleRu = "";
+    private String pageTitleEn = "";
+    private final List<String> types = new ArrayList<>();
+    private String description = "";
+    private String notes = "";
+
+    private QueryTableFieldDescription() {
+    }
+  }
+
+  /** Страница параметра виртуальной таблицы языка запросов. */
+  @Getter
+  protected static class QueryTableParameterDescription {
+    private String name = "";
+    private boolean required = true;
+    private final List<String> types = new ArrayList<>();
+    private String description = "";
+
+    private QueryTableParameterDescription() {
     }
   }
 

@@ -9,9 +9,14 @@ import com.github._1c_syntax.bsl.context.api.ContextConstructor;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextKind;
+import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
+import com.github._1c_syntax.bsl.context.api.ContextQueryElement;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTable;
 import com.github._1c_syntax.bsl.context.api.ContextType;
+import com.github._1c_syntax.bsl.context.api.QueryElementCategory;
+import com.github._1c_syntax.bsl.context.api.QueryFunctionGroup;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -19,6 +24,7 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -320,16 +326,25 @@ class RealHbkSmokeTest {
             .as("generic-имена разбираются штатно (скобки в них — не en-часть)")
             .anyMatch(c -> c.name().getName().startsWith("СправочникСсылка.<"));
         assertThat(provider.getContexts())
-            .as("в имя не должна попадать en-часть заголовка «Имя (Name)»")
+            .as("в имя типа не должна попадать en-часть заголовка «Имя (Name)»")
+            // Статьи языка запросов не в счёт: у них скобки — часть заголовка
+            // («Секция ВЫБРАТЬ (Описание запроса)»), а не перевод.
+            .filteredOn(c -> c.kind() == ContextKind.TYPE || c.kind() == ContextKind.COLLECTION
+                || c.kind() == ContextKind.ENUM)
             .noneMatch(c -> c.name().getName().contains("("));
 
-        // Дублей имён должно стать заметно меньше, чем при именах из оглавления
-        // (там их было 27); оставшиеся — честные омонимы платформы.
-        var duplicateRuNames = provider.getContexts().stream()
+        // Дублей имён среди типов должно быть заметно меньше, чем при именах из
+        // оглавления (там их было 27 на весь набор); оставшиеся — честные
+        // омонимы платформы вроде ЭлементыФормы (FormItems / Controls).
+        // Элементы языка запросов в счёт не идут: их имена намеренно живут в
+        // своём пространстве и пересекаются с примитивами (СТРОКА, ДАТА).
+        var duplicateTypeNames = provider.getContexts().stream()
+            .filter(c -> c.kind() == ContextKind.TYPE || c.kind() == ContextKind.COLLECTION
+                || c.kind() == ContextKind.ENUM)
             .collect(Collectors.groupingBy(
                 c -> c.name().getName().toLowerCase(), Collectors.counting()))
             .values().stream().filter(n -> n > 1).count();
-        assertThat(duplicateRuNames).isLessThanOrEqualTo(12);
+        assertThat(duplicateTypeNames).isLessThanOrEqualTo(5);
 
         // Омонимы: «Расширение элементов управления, расположенных в форме» есть
         // и для обычных форм (8.0, 11 свойств), и для управляемых (8.2). Имена
@@ -500,6 +515,261 @@ class RealHbkSmokeTest {
             .toList();
         assertThat(allProperties).anyMatch(p -> !p.seeAlso().isEmpty());
         assertThat(allProperties).anyMatch(p -> !p.notes().isBlank());
+
+        // === Контекст языка запросов — отдельный провайдер ===
+        // Внутри текста запроса действует только он, поэтому таблицы и элементы
+        // языка запросов в общий список контекстов не попадают.
+        var queryProvider = grabber.getQueryProvider();
+        assertThat(queryProvider).isNotNull();
+        assertThat(provider.getContexts())
+            .as("контекст запросов не смешивается с контекстом встроенного языка")
+            .noneMatch(c -> c instanceof ContextQueryTable || c instanceof ContextQueryElement);
+
+        // Таблицы языка запросов (ветка tables/).
+        var queryTables = queryProvider.getTables();
+        assertThat(queryTables)
+            .as("таблицы запросов: 59 страниц в 8.3.27")
+            .hasSizeGreaterThanOrEqualTo(50);
+        assertThat(queryTables.stream().mapToInt(t -> t.fields().size()).sum())
+            .as("поля таблиц")
+            .isGreaterThan(500);
+        assertThat(queryTables.stream().mapToInt(t -> t.parameters().size()).sum())
+            .as("параметры виртуальных таблиц")
+            .isGreaterThan(50);
+        // Имена таблиц — generic'и вида «РегистрСведений.<Имя регистра сведений>.СрезПоследних».
+        assertThat(queryTables).anyMatch(ContextQueryTable::isGeneric);
+
+        var sliceLast = queryTables.stream()
+            .filter(t -> t.name().getName().startsWith("РегистрСведений.")
+                && t.name().getName().endsWith("СрезПоследних"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("РегистрСведений.<…>.СрезПоследних not found"));
+        assertThat(sliceLast.name().getAlias()).contains("InformationRegister", "SliceLast");
+        assertThat(sliceLast.description()).contains("наиболее поздних записей");
+        assertThat(sliceLast.syntaxText()).contains("СрезПоследних");
+        // Поле со ссылочным типом: Регистратор → ДокументСсылка.<Имя документа>.
+        var recorder = sliceLast.fields().stream()
+            .filter(f -> "Регистратор".equals(f.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("поле Регистратор не найдено"));
+        assertThat(recorder.name().getAlias()).isEqualTo("Recorder");
+        assertThat(recorder.types())
+            .extracting(c -> c.name().getName())
+            .anyMatch(n -> n.startsWith("ДокументСсылка."));
+        // en-имена полей и параметров подтягиваются мерджем по пути страницы.
+        assertThat(sliceLast.fields())
+            .filteredOn(f -> "<Имя измерения>".equals(f.name().getName()))
+            .allMatch(f -> "<Dimension name>".equals(f.name().getAlias()));
+        var period = sliceLast.parameters().stream()
+            .filter(p -> "Период".equals(p.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("параметр Период не найден"));
+        assertThat(period.name().getAlias()).isEqualTo("Period");
+        assertThat(period.isRequired()).isFalse();
+        assertThat(period.types())
+            .extracting(c -> c.name().getName())
+            .contains("Дата", "МоментВремени", "Граница");
+
+        assertThat(queryProvider.getTableByName("РегистрСведений.<Имя регистра сведений>.СрезПоследних"))
+            .as("таблица ищется по имени внутри своего провайдера")
+            .isPresent();
+        assertThat(sliceLast.correspondence())
+            .as("корреспонденция — признак только таблиц регистра бухгалтерии")
+            .isEmpty();
+
+        // Таблицы регистра бухгалтерии платформа описывает дважды — «с
+        // поддержкой корреспонденции» и «без», — под одним именем и с разными
+        // наборами полей. Различает их только заголовок рубрики оглавления.
+        var accountingRegisterTables =
+            queryProvider.getTablesByName("РегистрБухгалтерии.<Имя регистра бухгалтерии>");
+        assertThat(accountingRegisterTables)
+            .as("основная таблица регистра бухгалтерии описана дважды")
+            .hasSize(2);
+        var withCorrespondence = accountingRegisterTables.stream()
+            .filter(t -> t.correspondence().orElse(false))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("таблица регистра бухгалтерии с корреспонденцией не найдена"));
+        var withoutCorrespondence = accountingRegisterTables.stream()
+            .filter(t -> !t.correspondence().orElse(true))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("таблица регистра бухгалтерии без корреспонденции не найдена"));
+        assertThat(withCorrespondence.fields())
+            .extracting(f -> f.name().getName())
+            .contains("СчетДт", "СчетКт", "<Имя ресурса>Дт", "<Имя ресурса>Кт")
+            .doesNotContain("Счет", "ВидДвижения");
+        assertThat(withoutCorrespondence.fields())
+            .extracting(f -> f.name().getName())
+            .contains("Счет", "ВидДвижения")
+            .doesNotContain("СчетДт", "СчетКт");
+
+        // Одноимённые таблицы бывают только у регистра бухгалтерии, и внутри
+        // такой пары признак всегда разный: иначе выбрать нужную было бы нечем.
+        queryTables.stream()
+            .collect(Collectors.groupingBy(t -> t.name().getName()))
+            .forEach((tableName, sameNamed) -> {
+                if (sameNamed.size() > 1) {
+                    assertThat(tableName).startsWith("РегистрБухгалтерии.");
+                    assertThat(sameNamed)
+                        .extracting(ContextQueryTable::correspondence)
+                        .containsExactlyInAnyOrder(Optional.of(true), Optional.of(false));
+                }
+            });
+
+        // === Элементы языка запросов (shquery_*.hbk) ===
+        var queryElements = queryProvider.getElements();
+        assertThat(queryElements).hasSizeGreaterThan(100);
+        assertThat(queryElements)
+            .extracting(e -> e.name().getName())
+            .contains("СРЕДНЕЕ", "КОЛИЧЕСТВО", "ПОДСТРОКА", "ВЫБРАТЬ", "РАЗНОСТЬДАТ");
+        assertThat(queryElements)
+            .extracting(ContextQueryElement::category)
+            .contains(QueryElementCategory.SECTION, QueryElementCategory.FUNCTION,
+                QueryElementCategory.KEYWORD, QueryElementCategory.CLAUSE,
+                QueryElementCategory.LITERAL);
+
+        var substring = queryElements.stream()
+            .filter(e -> "ПОДСТРОКА".equals(e.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ПОДСТРОКА не найдена"));
+        assertThat(substring.category()).isEqualTo(QueryElementCategory.FUNCTION);
+        assertThat(substring.functionGroup())
+            .as("вид функции — из подраздела «Функции работы со строками»")
+            .isEqualTo(QueryFunctionGroup.STRING);
+        assertThat(substring.name().getAlias()).isEqualTo("SUBSTRING");
+        assertThat(substring.description()).contains("подстроки из строки");
+        assertThat(substring.parameters())
+            .as("параметры собраны из прозы «Первый параметр – …»")
+            .hasSize(3)
+            .satisfies(params -> {
+                assertThat(params.get(0).types()).containsExactly("СТРОКА");
+                assertThat(params.get(2).position()).isEqualTo(3);
+            });
+
+        // === Структура запроса из оглавления ===
+        // Категория, вид функции и вложенность берутся из дерева, а не из
+        // заголовка страницы: заголовки неоднородны, и по ним больше половины
+        // страниц оставались нераспознанными (ARTICLE).
+        var selectSection = queryProvider.getElementByName("ВЫБРАТЬ")
+            .orElseThrow(() -> new AssertionError("ВЫБРАТЬ не найдено"));
+        assertThat(selectSection.category()).isEqualTo(QueryElementCategory.SECTION);
+        assertThat(selectSection.syntaxRule())
+            .as("правило со страницы секции")
+            .startsWith("ВЫБРАТЬ [РАЗРЕШЕННЫЕ] [РАЗЛИЧНЫЕ] [ПЕРВЫЕ <Количество>]")
+            .contains("[ГДЕ <Условие отбора>]");
+        assertThat(selectSection.children())
+            .as("предложения секции ВЫБРАТЬ")
+            .extracting(ContextName::getName)
+            .contains("ИЗ", "ГДЕ", "СГРУППИРОВАТЬ ПО", "ПОМЕСТИТЬ");
+
+        var from = queryProvider.getElementByName("ИЗ")
+            .orElseThrow(() -> new AssertionError("ИЗ не найдено"));
+        assertThat(from.category()).isEqualTo(QueryElementCategory.CLAUSE);
+        assertThat(from.parent())
+            .as("предложение ИЗ живёт внутри секции ВЫБРАТЬ")
+            .isNotNull()
+            .extracting(ContextName::getName)
+            .isEqualTo("ВЫБРАТЬ");
+
+        // Раньше это была «корзина»: 56 из 121 элемента не классифицировались.
+        long articles = queryElements.stream()
+            .filter(e -> e.category() == QueryElementCategory.ARTICLE)
+            .count();
+        assertThat(articles)
+            .as("ARTICLE — только настоящие обзорные статьи (%d из %d)", articles, queryElements.size())
+            .isLessThan(30);
+        assertThat(queryElements)
+            .filteredOn(e -> e.category() == QueryElementCategory.KEYWORD)
+            .as("ключевые слова больше не теряются")
+            .hasSizeGreaterThan(15);
+        assertThat(queryElements)
+            .as("у каждого элемента есть en-имя")
+            .allMatch(e -> !e.name().getAlias().isBlank());
+        assertThat(queryElements)
+            .filteredOn(e -> e.category() == QueryElementCategory.FUNCTION)
+            .as("вид функции известен для всех функций")
+            .allMatch(e -> e.functionGroup() != QueryFunctionGroup.NONE);
+
+        var average = queryElements.stream()
+            .filter(e -> "СРЕДНЕЕ".equals(e.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("СРЕДНЕЕ не найдено"));
+        assertThat(average.category()).isEqualTo(QueryElementCategory.FUNCTION);
+        assertThat(average.functionGroup()).isEqualTo(QueryFunctionGroup.AGGREGATE);
+        assertThat(average.name().getAlias()).isEqualTo("AVG");
+        assertThat(average.examples())
+            .as("единственный blockquote на странице СРЕДНЕЕ — «см. также:», а не пример")
+            .isEmpty();
+        assertThat(average.seeAlso()).containsExactly("Агрегатные функции");
+        assertThat(average.seeAlsoEn()).containsExactly("Aggregate Functions");
+
+        // На странице ЕСТЬNULL «см. также:» лежит внутри блока с примером —
+        // ни в код, ни в описание он попадать не должен.
+        var isNull = queryProvider.getElementByName("ЕСТЬNULL")
+            .orElseThrow(() -> new AssertionError("ЕСТЬNULL не найдена"));
+        assertThat(isNull.seeAlso()).containsExactly("Функции языка запросов");
+        assertThat(isNull.description()).doesNotContain("см. также");
+        assertThat(isNull.examples())
+            .singleElement(as(STRING))
+            .startsWith("// Получить сумму")
+            .doesNotContain("см. также");
+
+        // Хвост статьи бывает списком <UL> — он тоже часть описания.
+        var recordAutoNumber = queryProvider.getElementByName("АВТОНОМЕРЗАПИСИ")
+            .orElseThrow(() -> new AssertionError("АВТОНОМЕРЗАПИСИ не найдена"));
+        assertThat(recordAutoNumber.description())
+            .as("список «НЕЛЬЗЯ использовать» — часть описания")
+            .contains("Данную функцию НЕЛЬЗЯ использовать")
+            .contains("— в выражениях языка запросов.");
+
+        long elementsWithSeeAlso = queryElements.stream()
+            .filter(e -> !e.seeAlso().isEmpty())
+            .count();
+        assertThat(elementsWithSeeAlso).isGreaterThan(50);
+
+        // Примером считается только блок после заголовка «Пример:»: строки
+        // запроса разделены <BR> и должны сохраниться, а таблица из блока
+        // «Результат запроса:» кодом не является.
+        var hierarchyTotals = queryElements.stream()
+            .filter(e -> "Итоги по иерархии".equals(e.name().getName()))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("«Итоги по иерархии» не найдены"));
+        assertThat(hierarchyTotals.examples())
+            .as("на странице два блока «Пример:» и два блока «Результат запроса:»")
+            .hasSize(2)
+            .allSatisfy(ex -> assertThat(ex).contains("\n").startsWith("ВЫБРАТЬ"))
+            .last(as(STRING)).contains("ТОЛЬКО ИЕРАРХИЯ");
+        assertThat(hierarchyTotals.examplesEn())
+            .hasSize(2)
+            .allSatisfy(ex -> assertThat(ex).startsWith("SELECT"));
+        assertThat(hierarchyTotals.description())
+            .as("текст статьи после таблицы результата — часть описания")
+            .contains("ключевое слово ТОЛЬКО");
+        assertThat(hierarchyTotals.descriptionEn()).contains("the keyword ONLY");
+
+        long elementsWithEnExamples = queryElements.stream()
+            .filter(e -> !e.examplesEn().isEmpty())
+            .count();
+        assertThat(elementsWithEnExamples)
+            .as("примеры языка запросов двуязычны")
+            .isGreaterThan(30);
+
+        // Пространства имён не пересекаются: «ДАТА» есть и как литерал языка
+        // запросов, и как примитив — каждый в своём провайдере.
+        assertThat(provider.getContextByName("Дата"))
+            .get()
+            .extracting(Context::kind)
+            .isEqualTo(ContextKind.PRIMITIVE_TYPE);
+        assertThat(queryProvider.getElementByName("ДАТА"))
+            .get()
+            .extracting(ContextQueryElement::category)
+            .isEqualTo(QueryElementCategory.LITERAL);
+        assertThat(queryProvider.getElementByName("Массив"))
+            .as("платформенных типов в контексте запросов нет")
+            .isEmpty();
+        // Выборка по категории — для автодополнения внутри текста запроса.
+        assertThat(queryProvider.getElements(QueryElementCategory.FUNCTION))
+            .extracting(e -> e.name().getName())
+            .contains("СРЕДНЕЕ", "КОЛИЧЕСТВО");
 
         // === Generic-методы: возврат должен резолвиться ===
         // HtmlParser в секции «Возвращаемое значение:» аккумулирует фрагменты
