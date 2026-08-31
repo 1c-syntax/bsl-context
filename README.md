@@ -9,14 +9,18 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
 примеры, ссылки «См. также», значения по умолчанию для параметров,
 рекомендации по замене устаревших элементов).
 
-Парсятся **оба** парных HBK платформы:
-- `shcntx_*.hbk` — типы, методы, свойства, события, перечисления, глобальный контекст;
+Парсятся **три** пары HBK платформы:
+- `shcntx_*.hbk` — типы, методы, свойства, события, перечисления, глобальный
+  контекст, а также таблицы языка запросов (ветка `tables/`);
 - `shlang_*.hbk` — раздел «Встроенный язык»: примитивы,
   литералы (`Истина`/`Ложь`), операторы и управляющие конструкции
   (`Если`, `Для`, `Пока`, `Попытка`, `Новый`, `?`, `[...]`, `И`/`ИЛИ`/`НЕ`),
   объявления (`Процедура`, `Функция`, `Перем`), директивы компиляции
   (`&НаКлиенте`, `&НаСервере`, …), аннотации (`&Перед`, `&После`, …),
-  инструкции препроцессора (`#Если`, `#Область`, …).
+  инструкции препроцессора (`#Если`, `#Область`, …);
+- `shquery_*.hbk` — раздел «Язык запросов»: агрегатные функции (`СРЕДНЕЕ`,
+  `КОЛИЧЕСТВО`), функции (`ПОДСТРОКА`, `РАЗНОСТЬДАТ`), ключевые слова
+  (`ВЫБРАТЬ`, `ПЕРВЫЕ`), предложения (`ИЗ`), операторы и литералы.
 
 Предназначен для использования в инструментах статического анализа
 кода 1С — в первую очередь как источник платформенных типов для
@@ -65,6 +69,31 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   - `KnownStandardAttributes` — стандартные реквизиты MD-объектов
     (`Ссылка`, `ПометкаУдаления`, `Проведен`, …) по типу-владельцу:
     их состав знает только платформа, в СП и mdclasses его нет.
+- **Контекст языка запросов — отдельно от контекста встроенного языка**
+  ([`QueryContextProvider`](src/main/java/com/github/_1c_syntax/bsl/context/api/QueryContextProvider.java)).
+  Текст запроса — самостоятельный строковый литерал внутри кода: внутри
+  него действует только контекст запросов, а контекст встроенного языка —
+  нет. Поэтому таблицы и элементы языка запросов **не попадают** в
+  `ContextProvider.getContexts()`, у них своё хранилище и свой поиск по
+  именам — иначе пространства имён конфликтовали бы (`СТРОКА` и `ДАТА`
+  есть и там, и там, но означают разное). `Context` они тоже не наследуют:
+  общего у них только двуязычное имя и описание, а доступности по клиентам,
+  версий появления и «См. также» на страницах языка запросов нет вовсе:
+  - `ContextQueryTable` + `ContextQueryTableField` /
+    `ContextQueryTableParameter` — таблицы: основные
+    (`Справочник.<Имя справочника>`) и виртуальные
+    (`РегистрНакопления.<Имя регистра>.Остатки`) с полями и параметрами.
+    В 8.3.27 — 59 таблиц, 588 полей, 78 параметров. Типы полей резолвятся
+    в платформенные (`Регистратор` → `ДокументСсылка.<Имя документа>`).
+    У таблиц регистра бухгалтерии заполнен `correspondence()`: платформа
+    описывает их дважды — с поддержкой корреспонденции и без, — под одним
+    именем и с разными наборами полей (`Счет` + `ВидДвижения` против
+    `СчетДт` / `СчетКт` и ресурсов в вариантах `Дт` / `Кт`), поэтому
+    одноимённую пару отдаёт `getTablesByName()`;
+  - `ContextQueryElement` + `QueryElementCategory`
+    (`AGGREGATE_FUNCTION`, `FUNCTION`, `KEYWORD`, `CLAUSE`, `OPERATOR`,
+    `LITERAL`, `ARTICLE`) — элементы языка из `shquery_*.hbk`: имя,
+    категория, описание и примеры (121 элемент).
 - **Примитивные типы** — `Строка`, `Число`, `Дата`, `Булево`, `Тип`,
   `Null`, `Неопределено` — приходят как `ContextKind.PRIMITIVE_TYPE` со
   своими описаниями из синтакс-помощника. `Произвольный` (псевдо-маркер
@@ -129,7 +158,10 @@ Java-парсер синтакс-помощника (`.hbk`) платформы 
   (сам объект модели остаётся ru). Ключ карты — сам объект
   (`IdentityHashMap`), так что спрашивать можно про контекст, метод,
   свойство, событие, конструктор, значение перечисления, параметр формы,
-  вариант сигнатуры и параметр. Языковые конструкции из
+  вариант сигнатуры и параметр. У контекста языка запросов провайдера с
+  аттачментами нет, поэтому en-описание там лежит прямо в объекте —
+  `descriptionEn()` у таблицы, поля, параметра и элемента.
+  Языковые конструкции из
   `shlang_ru.hbk` подмешивают en-алиасы из парного `shlang_root.hbk`
   (имена body-keyword'ов вроде `Тогда`/`Then`, `КонецЕсли`/`EndIf`
   сматчиваются по позиции тегов на синхронных страницах ru/en),
@@ -200,6 +232,14 @@ ctx.getContexts().stream()
 
 // Глобальный контекст.
 ctx.getGlobalContext().methods().forEach(m -> System.out.println(m.name()));
+
+// Контекст языка запросов — отдельный провайдер: внутри текста запроса
+// действует только он.
+QueryContextProvider query = grabber.getQueryProvider();
+query.getElements(QueryElementCategory.AGGREGATE_FUNCTION)   // СРЕДНЕЕ, КОЛИЧЕСТВО, …
+     .forEach(e -> System.out.println(e.name()));
+query.getTableByName("РегистрСведений.<Имя регистра сведений>.СрезПоследних")
+     .ifPresent(t -> t.fields().forEach(f -> System.out.println(f.name() + " " + f.types())));
 ```
 
 ### Способы создания
@@ -262,6 +302,7 @@ shcntx_*.hbk                                 shlang_*.hbk
 | `HbkContainerExtractor` | Разбирает внешний `.hbk`-контейнер на FileStorage + PackBlock. |
 | `HbkTreeParser` | Обходит дерево HBK и для каждой страницы строит `PlatformContext*`-объект через `HtmlParser`. |
 | `HtmlParser` | Извлекает структурные секции HTML-страницы в `*Description`-DTO. |
+| `ShqueryParser` | Парсит раздел «Язык запросов» из `shquery_*.hbk`: имя и категорию снимает с заголовка страницы («Агрегатная функция СРЕДНЕЕ» → `СРЕДНЕЕ` + `AGGREGATE_FUNCTION`), плюс описание и примеры. Разметка там свободная, без `V8SH_*`-классов. |
 | `ShlangParser` | Парсит раздел «Встроенный язык» из `shlang_*.hbk`: примитивные типы и языковые конструкции (литералы, операторы, директивы, аннотации, инструкции препроцессора). Сниппеты автодополнения и en-алиасы вытаскивает из парного `shlang_root.hbk`. |
 | `PageSource` | Абстракция «открыть страницу по пути». Реализации: `InMemory` (production) и `FileSystem` (тесты на распакованных фикстурах). |
 | `PlatformContextProvider` | Хранит готовые контексты, резолвит строковые ссылки в объекты `Context` и отдаёт en-тексты через `getEnAttachments`. |
@@ -363,6 +404,30 @@ ContextFormParameter
 ├─ isKey(): boolean                              // «Использование: Ключевой»
 ├─ description(), sinceVersion(), deprecatedSinceVersion(): String
 └─ seeAlso(), recommendedReplacements(): List<String>
+
+QueryContextProvider                             // контекст ЯЗЫКА ЗАПРОСОВ — отдельно
+├─ getTables(): List<ContextQueryTable>          // grabber.getQueryProvider()
+├─ getTableByName(name): Optional<ContextQueryTable>
+├─ getTablesByName(name): List<ContextQueryTable>  // не теряет пару РегистрБухгалтерии
+├─ getElements(): List<ContextQueryElement>
+├─ getElements(category): List<ContextQueryElement>
+└─ getElementByName(name): Optional<ContextQueryElement>
+
+ContextQueryTable                                // таблица языка запросов, ветка tables/
+├─ name(): ContextName, description(): String    //   (Context НЕ наследует)
+├─ fields(): List<ContextQueryTableField>        // name, types, description, notes
+├─ parameters(): List<ContextQueryTableParameter> // + isRequired
+├─ correspondence(): Optional<Boolean>           // только у таблиц РегистрБухгалтерии
+├─ syntaxText(): String                          // «РегистрСведений.<Имя>.СрезПоследних»
+├─ examples(): List<String>
+└─ isGeneric(), typeParameters()                 // 58 из 59 таблиц — generic
+
+ContextQueryElement                              // элемент языка запросов, shquery_*.hbk
+├─ name(): ContextName, description(): String
+├─ examples(): List<String>
+└─ category(): QueryElementCategory
+               { AGGREGATE_FUNCTION, FUNCTION, KEYWORD,
+                 CLAUSE, OPERATOR, LITERAL, ARTICLE }
 
 ContextLanguageKeyword extends Context
 ├─ category(): LanguageKeywordCategory

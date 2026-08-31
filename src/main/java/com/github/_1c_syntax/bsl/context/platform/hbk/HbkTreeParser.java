@@ -11,6 +11,9 @@ import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextMethodSignature;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTable;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTableField;
+import com.github._1c_syntax.bsl.context.api.ContextQueryTableParameter;
 import com.github._1c_syntax.bsl.context.api.ContextSignatureParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextCollection;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextConstructor;
@@ -25,6 +28,9 @@ import com.github._1c_syntax.bsl.context.platform.PlatformContextProvider;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextSignatureParameter;
 import com.github._1c_syntax.bsl.context.platform.PlatformContextType;
 import com.github._1c_syntax.bsl.context.platform.PlatformGlobalContext;
+import com.github._1c_syntax.bsl.context.platform.PlatformQueryTable;
+import com.github._1c_syntax.bsl.context.platform.PlatformQueryTableField;
+import com.github._1c_syntax.bsl.context.platform.PlatformQueryTableParameter;
 import com.github._1c_syntax.bsl.context.platform.primitive.ArbitraryType;
 import com.github.eightm.lib.DoubleLanguageString;
 import com.github.eightm.lib.Page;
@@ -35,6 +41,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -51,6 +58,13 @@ public class HbkTreeParser {
     // synchronizedList, иначе ArrayList.add под contention теряет элементы
     // (между ensureCapacity и size++).
     private final List<Context> contexts = Collections.synchronizedList(new ArrayList<>());
+    /**
+     * Таблицы языка запросов — отдельный список: внутри текста запроса
+     * действует только контекст языка запросов, поэтому в общий список
+     * контекстов встроенного языка они не попадают
+     * (см. {@link com.github._1c_syntax.bsl.context.api.QueryContextProvider}).
+     */
+    private final List<ContextQueryTable> queryTables = Collections.synchronizedList(new ArrayList<>());
     /**
      * Сколько узлов оглавления ведёт на каждую страницу. Обычно один, но
      * бывает и несколько — см. {@link #contextName(Page, String, String)}.
@@ -106,12 +120,21 @@ public class HbkTreeParser {
         var pageIndex = new HashMap<String, DoubleLanguageString>();
         indexPages(tree.getPages(), pageIndex);
         htmlParser.setPageIndex(pageIndex);
-
         countNodes(tree.getPages(), nodesPerPage);
 
         visitPagesFromTree(tree.getPages());
 
         return contexts;
+    }
+
+    /**
+     * Таблицы языка запросов, собранные последним вызовом {@code parse}.
+     * Отдаются отдельно от {@link #parse(TableOfContent, List)}: в списке
+     * контекстов встроенного языка им не место — внутри текста запроса
+     * действует свой контекст.
+     */
+    public List<ContextQueryTable> getQueryTables() {
+        return List.copyOf(queryTables);
     }
 
     /**
@@ -144,15 +167,31 @@ public class HbkTreeParser {
     }
 
     public void visitPagesFromTree(List<Page> pages) {
+        visitPagesFromTree(pages, null);
+    }
+
+    /**
+     * @param correspondence признак корреспонденции, унаследованный от рубрики
+     *                       выше по дереву; {@code null} — рубрики регистра
+     *                       бухгалтерии над этими страницами не было.
+     */
+    private void visitPagesFromTree(List<Page> pages, Boolean correspondence) {
 
         pages.parallelStream()
-            // страницы-заглушки не интересны в парсере
-            .filter(page -> !page.htmlPath().isEmpty())
             .forEach(page -> {
-                if (isGlobalContextPage(page)) {
+                // Рубрика без собственной страницы («Таблицы запросов») — сама
+                // контекста не даёт, но её поддерево нужно обойти: раньше такие
+                // узлы отбрасывались вместе с потомками, и ветка tables/
+                // (таблицы языка запросов) в модель не попадала вовсе.
+                if (page.htmlPath().isEmpty()) {
+                    var own = correspondenceOf(page);
+                    visitPagesFromTree(page.children(), own == null ? correspondence : own);
+                } else if (isGlobalContextPage(page)) {
                     visitGlobalContextPage(page);
                 } else if (isCatalogPage(page)) {
-                    visitPagesFromTree(page.children());
+                    visitPagesFromTree(page.children(), correspondence);
+                } else if (isQueryTablePage(page)) {
+                    visitQueryTablePage(page, correspondence);
                 } else if (isEnumPage(page)) {
                     visitEnumPage(page);
                 } else {
@@ -314,12 +353,134 @@ public class HbkTreeParser {
             || nodesPerPage.getOrDefault(PageSource.normalize(page.htmlPath()), 1) > 1) {
             return new ContextName(tocRu, tocEn);
         }
+        // У таблиц запросов ru-сторона в оглавлении пустая, а en-сторона —
+        // это подпись рубрики («Таблица справочника»), не имя таблицы.
+        // Сравнивать языки не с чем — берём имя со страницы целиком.
+        if (tocRu.isBlank()) {
+            var enName = pageTitleEn == null || pageTitleEn.isBlank() ? tocEn : pageTitleEn;
+            return new ContextName(pageTitleRu, enName);
+        }
         if (HtmlParser.hasCyrillic(tocRu) != HtmlParser.hasCyrillic(pageTitleRu)) {
             // Заголовок на языке alias'а (en-HBK) — уточняем только его.
             return new ContextName(tocRu, pageTitleRu);
         }
         var en = pageTitleEn == null || pageTitleEn.isBlank() ? tocEn : pageTitleEn;
         return new ContextName(pageTitleRu, en);
+    }
+
+    /**
+     * Страница таблицы языка запросов — всё, что лежит в ветке {@code tables/}
+     * и не является страницей поля или параметра.
+     */
+    private boolean isQueryTablePage(Page page) {
+        var path = PageSource.normalize(page.htmlPath());
+        return path.startsWith("tables/")
+            && !path.contains("/fields/")
+            && !path.contains("/params/");
+    }
+
+    /**
+     * Признак корреспонденции по заголовку рубрики оглавления. Заголовок
+     * записан на языке HBK: ru — «Таблицы регистра бухгалтерии (с поддержкой
+     * корреспонденции)», en — «Accounting Register Tables (with correspondence
+     * support)». {@code null}, если рубрика не про регистр бухгалтерии, —
+     * это подавляющее большинство рубрик дерева.
+     */
+    private static Boolean correspondenceOf(Page rubric) {
+        var title = rubric.title().ru() == null || rubric.title().ru().isBlank()
+            ? rubric.title().en() : rubric.title().ru();
+        if (title == null) {
+            return null;
+        }
+        var lower = title.toLowerCase(Locale.ROOT);
+        // «без» проверяем первым: формулировка «с поддержкой» — его подстрока
+        // в английском варианте («without» начинается с «with»).
+        if (lower.contains("без поддержки корреспонденции")
+            || lower.contains("without correspondence support")) {
+            return Boolean.FALSE;
+        }
+        if (lower.contains("с поддержкой корреспонденции")
+            || lower.contains("with correspondence support")) {
+            return Boolean.TRUE;
+        }
+        return null;
+    }
+
+    /**
+     * Строит {@link ContextQueryTable} по странице таблицы: имя — с заголовка
+     * страницы, поля и параметры — из рубрик «Поля» и «Параметры» дерева.
+     *
+     * @param correspondence признак корреспонденции с рубрики оглавления;
+     *                       {@code null} у всех таблиц, кроме таблиц регистра
+     *                       бухгалтерии.
+     */
+    private void visitQueryTablePage(Page page, Boolean correspondence) {
+        var pageInfo = htmlParser.parseQueryTablePage(page);
+        List<ContextQueryTableField> fields = Collections.emptyList();
+        List<ContextQueryTableParameter> parameters = Collections.emptyList();
+
+        for (var rubric : page.children()) {
+            var ru = rubric.title().ru();
+            var en = rubric.title().en();
+            if ("Поля".equals(ru) || "Поля".equals(en) || "Fields".equals(ru) || "Fields".equals(en)) {
+                fields = getQueryTableFields(rubric);
+            } else if ("Параметры".equals(ru) || "Параметры".equals(en)
+                || "Parameters".equals(ru) || "Parameters".equals(en)) {
+                parameters = getQueryTableParameters(rubric);
+            }
+        }
+
+        queryTables.add(PlatformQueryTable.builder()
+            .name(contextName(page, pageInfo.getPageTitleRu(), pageInfo.getPageTitleEn()))
+            .fields(fields)
+            .parameters(parameters)
+            .correspondence(correspondence)
+            .syntaxText(pageInfo.getSyntaxText())
+            .description(pageInfo.getDescription())
+            .examples(List.copyOf(pageInfo.getExamples()))
+            .pagePath(PageSource.normalize(page.htmlPath()))
+            .build());
+    }
+
+    private List<ContextQueryTableField> getQueryTableFields(Page rubric) {
+        return rubric.children().stream()
+            .filter(it -> PageSource.normalize(it.htmlPath()).contains("/fields/"))
+            .map(it -> {
+                var field = htmlParser.parseQueryTableFieldPage(it);
+                // Оглавление у полей таблиц даёт ru-имя в обеих сторонах, так что
+                // en берём только со страницы; если там его нет («<Имя измерения>»),
+                // alias остаётся пустым и его проставит BilingualMerger по пути.
+                return (ContextQueryTableField) PlatformQueryTableField.builder()
+                    .name(new ContextName(field.getPageTitleRu().isBlank()
+                        ? it.title().ru() : field.getPageTitleRu(), field.getPageTitleEn()))
+                    .rawTypes(List.copyOf(field.getTypes()))
+                    .description(field.getDescription())
+                    .notes(field.getNotes())
+                    .pagePath(PageSource.normalize(it.htmlPath()))
+                    .build();
+            })
+            .collect(Collectors.toList());
+    }
+
+    private List<ContextQueryTableParameter> getQueryTableParameters(Page rubric) {
+        return rubric.children().stream()
+            .filter(it -> PageSource.normalize(it.htmlPath()).contains("/params/"))
+            .map(it -> {
+                var param = htmlParser.parseQueryTableParameterPage(it);
+                // На странице параметра только ru-имя, а в оглавлении en-сторона
+                // тоже русская — оставляем alias пустым, его заполнит
+                // BilingualMerger по пути страницы.
+                var name = new ContextName(
+                    param.getName().isBlank() ? it.title().ru() : param.getName(), "");
+                return (ContextQueryTableParameter) PlatformQueryTableParameter.builder()
+                    .name(name)
+                    .rawTypes(List.copyOf(param.getTypes()))
+                    .required(param.isRequired())
+                    .description(param.getDescription())
+                    .pagePath(PageSource.normalize(it.htmlPath()))
+                    .build();
+            })
+            .collect(Collectors.toList());
     }
 
     private void visitEnumPage(Page page) {

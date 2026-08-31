@@ -22,6 +22,10 @@ package com.github._1c_syntax.bsl.context.api;
  *       ({@code &Перед}), инструкция препроцессора ({@code #Если}).
  *       Приходит из {@code shlang_*.hbk}.</li>
  * </ul>
+ *
+ * <p>Язык запросов сюда не входит: его таблицы и конструкции живут в
+ * отдельном {@link QueryContextProvider} и контекстом встроенного языка не
+ * являются.
  */
 public enum ContextKind {
     PRIMITIVE_TYPE, TYPE, COLLECTION, ENUM, GLOBAL_CONTEXT, LANGUAGE_KEYWORD

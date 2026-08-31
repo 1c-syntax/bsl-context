@@ -349,6 +349,53 @@ class HtmlParserTest {
             .doesNotContain("свойство");
     }
 
+    // --- таблицы языка запросов ---
+
+    @Test
+    void parseQueryTablePage() throws URISyntaxException {
+        // Чаптеры «Синтаксис», «Поля» и «Параметры» здесь без двоеточия —
+        // разметка таблиц отличается от страниц типов.
+        var info = newParser().parseQueryTablePage(page("/querytables/query_table.html"));
+        assertThat(info.getPageTitleRu()).isEqualTo("РегистрТестовый.<Имя регистра>.СрезПоследних");
+        assertThat(info.getPageTitleEn()).isEqualTo("TestRegister.<Имя регистра>.SliceLast");
+        assertThat(info.getSyntaxText()).contains("РегистрТестовый.<Имя регистра>.СрезПоследних");
+        assertThat(info.getDescription()).contains("Описание для теста");
+        // Списки полей и параметров берутся из дерева, в описание не попадают.
+        assertThat(info.getDescription()).doesNotContain("Активность", "Период");
+    }
+
+    @Test
+    void parseQueryTableFieldPage() throws URISyntaxException {
+        var field = newParser().parseQueryTableFieldPage(page("/querytables/query_table_field.html"));
+        assertThat(field.getPageTitleRu()).isEqualTo("Активность");
+        assertThat(field.getPageTitleEn()).isEqualTo("Active");
+        assertThat(field.getTypes()).containsExactly("Булево");
+        assertThat(field.getDescription()).contains("Описание для теста");
+        assertThat(field.getNotes()).contains("Заметка для теста");
+    }
+
+    @Test
+    void parseQueryTableParameterPage() throws URISyntaxException {
+        // Обязательность и имя — в заголовке-чаптере, типы — в «Тип параметра:».
+        var param = newParser().parseQueryTableParameterPage(page("/querytables/query_table_param.html"));
+        assertThat(param.getName()).isEqualTo("Период");
+        assertThat(param.isRequired()).isFalse();
+        assertThat(param.getTypes()).containsExactly("Дата", "МоментВремени");
+        assertThat(param.getDescription()).contains("Описание для теста");
+    }
+
+    @Test
+    void parseQueryTableParameterPage_RequiredWithoutTypes() throws URISyntaxException {
+        // Без «(необязательный)» параметр обязательный; блока «Тип параметра:»
+        // может не быть — параметр принимает выражение языка запросов.
+        var param = newParser().parseQueryTableParameterPage(
+            page("/querytables/query_table_param_required.html"));
+        assertThat(param.getName()).isEqualTo("Условие");
+        assertThat(param.isRequired()).isTrue();
+        assertThat(param.getTypes()).isEmpty();
+        assertThat(param.getDescription()).contains("Конструкция языка запросов");
+    }
+
     // --- enum value ---
 
     @Test
