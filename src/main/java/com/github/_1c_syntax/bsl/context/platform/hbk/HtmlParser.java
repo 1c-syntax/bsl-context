@@ -292,34 +292,56 @@ public class HtmlParser {
   }
 
   /**
-   * Разбирает аккумулированную строку «Тип: …» из секции
-   * «Возвращаемое значение:» на отдельные имена типов и добавляет их в
-   * {@code returnValues}. Несколько типов разделяются запятой; внутри одного
-   * имени запятых не бывает (точки в qualifiedName типа — это валидный
-   * символ, а угловые скобки {@code <…>} — placeholder generic'а).
-   * Хвостовые точки/пробелы у каждого имени убираются.
-   * <p>
-   * Очищает {@code typeLine} в конце.
+   * Разделители типов в тексте строки «Тип: …» секции «Возвращаемое значение:».
+   * Кроме запятой СП использует:
+   * <ul>
+   *   <li>«;» — за ним обычно идёт пояснение, но бывают и ещё типы
+   *       ({@code ТабличныйДокумент, ТекстовыйДокумент; другой объект, …});</li>
+   *   <li>«или» / «or» ({@code ЗначениеПараметраКомпоновкиДанных или …});</li>
+   *   <li>«:» — опечатка вместо запятой ({@code Неопределено: ИнформацияМодуляКриптографии});</li>
+   *   <li>скобки — типы перечислены внутри пояснения
+   *       ({@code значения системных перечислений (ВидСчета, …)}).</li>
+   * </ul>
+   * Ищутся только в текстовых узлах: внутри ссылки двоеточие — часть имени
+   * ({@code ОбъектМетаданных: Макет}). Куски пояснений, попавшие в имена,
+   * отсеиваются при резолве типов.
    */
-  private static void flushTypeLine(StringBuilder typeLine, List<String> returnValues) {
-    if (typeLine.length() == 0) {
-      return;
+  private static final Pattern RETURN_TYPE_SEPARATOR = Pattern.compile(
+    "[,;:()]|(?<![\\p{L}\\d])(?:или|or)(?![\\p{L}\\d])",
+    Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+  /**
+   * Дописывает текстовый узел строки «Тип: …» к текущему имени типа: на каждом
+   * разделителе ({@link #RETURN_TYPE_SEPARATOR}) накопленное имя сбрасывается
+   * в {@code returnValues}.
+   */
+  private static void appendTypeText(String text, StringBuilder typeName, List<String> returnValues) {
+    var parts = RETURN_TYPE_SEPARATOR.split(text, -1);
+    typeName.append(parts[0]);
+    for (int i = 1; i < parts.length; i++) {
+      flushTypeName(typeName, returnValues);
+      typeName.append(parts[i]);
     }
-    for (var part : typeLine.toString().split(",")) {
-      var trimmed = part.trim();
-      // Снимаем хвостовую точку (HBK обычно ставит её в конце последнего типа).
-      // qualifiedName типа НИКОГДА не заканчивается на '.' — даже у generic'ов
-      // имя выглядит как "СправочникСсылка.<Имя справочника>" (заканчивается
-      // на '>'). Поэтому любая '.' на конце — это точка-разделитель из HBK
-      // («Тип: X.»), а не часть имени.
-      while (!trimmed.isEmpty() && trimmed.charAt(trimmed.length() - 1) == '.') {
-        trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
-      }
-      if (!trimmed.isEmpty()) {
-        returnValues.add(trimmed);
-      }
+  }
+
+  /**
+   * Добавляет накопленное имя типа в {@code returnValues}, сняв пробелы и
+   * хвостовые точки, и очищает {@code typeName}.
+   */
+  private static void flushTypeName(StringBuilder typeName, List<String> returnValues) {
+    var trimmed = typeName.toString().trim();
+    // Снимаем хвостовую точку (HBK обычно ставит её в конце последнего типа).
+    // qualifiedName типа НИКОГДА не заканчивается на '.' — даже у generic'ов
+    // имя выглядит как "СправочникСсылка.<Имя справочника>" (заканчивается
+    // на '>'). Поэтому любая '.' на конце — это точка-разделитель из HBK
+    // («Тип: X.»), а не часть имени.
+    while (!trimmed.isEmpty() && trimmed.charAt(trimmed.length() - 1) == '.') {
+      trimmed = trimmed.substring(0, trimmed.length() - 1).trim();
     }
-    typeLine.setLength(0);
+    if (!trimmed.isEmpty()) {
+      returnValues.add(trimmed);
+    }
+    typeName.setLength(0);
   }
 
   /**
@@ -1495,13 +1517,17 @@ public class HtmlParser {
     String pendingSeeAlsoText = null;
     String pendingSeeAlsoPath = null;
 
-    // Аккумулятор для текущей строки типа в "Тип: …". HBK иногда разбивает
+    // Аккумулятор для текущего имени типа в "Тип: …". HBK иногда разбивает
     // имя generic-типа на несколько HTML-узлов: <a>СправочникОбъект.</a>
     // <span>&lt;</span><a>Имя справочника</a><span>&gt;</span>. Чтобы не
     // получать на выходе ["СправочникОбъект.", "<", "Имя справочника", ">"],
-    // склеиваем соседние фрагменты в одну строку и разрезаем её только на
-    // запятых (как явных разделителях типов).
-    var currentTypeLine = new StringBuilder();
+    // склеиваем соседние элементы в одно имя; границы имён — разделители в
+    // текстовых узлах (см. RETURN_TYPE_SEPARATOR) и две ссылки подряд.
+    var currentTypeName = new StringBuilder();
+    // Предыдущий узел строки типа — ссылка. Ссылки встык (или через пробел)
+    // — разные типы: «<a>КолонкаВременнойТаблицыЗапроса</a><a>Неопределено</a>»;
+    // части generic-имени всегда разделены <span>&lt;</span> / <span>&gt;</span>.
+    var afterTypeLink = false;
 
     if (!hasOverloads) {
       // Имя варианта сигнатуры остаётся пустым: значимого имени в HBK у
@@ -1566,7 +1592,7 @@ public class HtmlParser {
       if (returnValuesSection) {
 
         if (node.attr("class").equals("V8SH_chapter")) {
-          flushTypeLine(currentTypeLine, result.returnValues);
+          flushTypeName(currentTypeName, result.returnValues);
           typeSection = false;
           returnValuesSection = false;
         } else {
@@ -1575,8 +1601,9 @@ public class HtmlParser {
             // Перед новым "Тип:" — flush'им предыдущий аккумулятор
             // (на случай, если в одной секции "Возвращаемое значение:"
             // указано несколько "Тип:" подряд).
-            flushTypeLine(currentTypeLine, result.returnValues);
+            flushTypeName(currentTypeName, result.returnValues);
             typeSection = true;
+            afterTypeLink = false;
 
             // Текст после «Тип:»/«Type:» иногда содержит inline-имя — забираем его.
             var text = n.text();
@@ -1584,7 +1611,7 @@ public class HtmlParser {
             if (idx >= 0) {
               var tail = text.substring(idx + typeMarkerLength(text, idx));
               if (!tail.isBlank()) {
-                currentTypeLine.append(tail);
+                appendTypeText(tail, currentTypeName, result.returnValues);
               }
             }
 
@@ -1593,17 +1620,23 @@ public class HtmlParser {
             if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
               // Конец строки типа: flush аккумулятора, выходим из typeSection
               // (после <br> идёт текстовое описание возврата).
-              flushTypeLine(currentTypeLine, result.returnValues);
+              flushTypeName(currentTypeName, result.returnValues);
               typeSection = false;
             } else if (node instanceof Element n) {
               // <a>префикс</a>, <span>&lt;</span>, <a>имя</a>, <span>&gt;</span>
-              // — все эти фрагменты СОБИРАЮТСЯ в одну строку имени типа.
-              currentTypeLine.append(n.text());
-            } else if (node instanceof TextNode n) {
-              // Текст внутри секции — обычно разделитель ", " или " " между
-              // фрагментами. Аккумулируем как есть; flush на запятой
-              // выполняется в самом flushTypeLine через split.
-              currentTypeLine.append(n.text());
+              // — все эти фрагменты СОБИРАЮТСЯ в одно имя типа.
+              var isLink = n.tagName().equalsIgnoreCase("a");
+              if (isLink && afterTypeLink) {
+                flushTypeName(currentTypeName, result.returnValues);
+              }
+              currentTypeName.append(n.text());
+              afterTypeLink = isLink;
+            } else if (node instanceof TextNode n && !(afterTypeLink && n.isBlank())) {
+              // Текст внутри секции — разделитель («, », «; », « или ») или
+              // имя типа без ссылки («Произвольный.»). Пробел между ссылками
+              // пропускаем: границу имён там уже отмечает afterTypeLink.
+              appendTypeText(n.text(), currentTypeName, result.returnValues);
+              afterTypeLink = false;
             }
 
           } else {

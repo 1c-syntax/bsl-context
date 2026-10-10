@@ -182,6 +182,24 @@ class HtmlParserTest {
     }
 
     @Test
+    void parseMethodPage_ReturnTypeSeparators() throws URISyntaxException {
+        // Типы возврата в СП разделены не только запятой: «или», «;» с
+        // пояснением после, «:» вместо запятой, скобки внутри пояснения, а
+        // ссылки бывают встык или через пробел. Generic-имя из нескольких
+        // узлов и двоеточие внутри ссылки резать нельзя. Куски пояснения
+        // («другое значение») остаются в сырых именах — их отсеивает резолв.
+        var method = parseMethodPage("methods/method_return_type_separators");
+        assertThat(method.getReturnValues()).containsExactly(
+            "МенеджерЭлемента.<Имя элемента>",
+            "ТипА", "ТипБ", "ТипВ", "ТипГ", "ТипД",
+            "ОбъектМетаданных: Виджет",
+            "другое значение", "ТипЕ", "ТипЖ",
+            "Произвольный");
+        assertThat(method.getReturnValueDescription())
+            .contains("Описание возвращаемого значения для теста");
+    }
+
+    @Test
     void parseMethodPage_PrimechanieAfterDescriptionGoesToNotes() throws URISyntaxException {
         // Реальный HBK: ru-заметка лежит под «Примечание:» (пара к en «Note:»),
         // при этом на странице есть отдельная «Описание:». «Примечание:» должно

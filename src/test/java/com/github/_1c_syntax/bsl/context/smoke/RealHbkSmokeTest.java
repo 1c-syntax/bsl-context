@@ -9,6 +9,7 @@ import com.github._1c_syntax.bsl.context.api.ContextConstructor;
 import com.github._1c_syntax.bsl.context.api.ContextEnum;
 import com.github._1c_syntax.bsl.context.api.ContextFormParameter;
 import com.github._1c_syntax.bsl.context.api.ContextKind;
+import com.github._1c_syntax.bsl.context.api.ContextMethod;
 import com.github._1c_syntax.bsl.context.api.ContextName;
 import com.github._1c_syntax.bsl.context.api.ContextProperty;
 import com.github._1c_syntax.bsl.context.api.ContextProvider;
@@ -811,7 +812,7 @@ class RealHbkSmokeTest {
             .contains("Неопределено");
 
         // ПустаяСсылка: единственный тип возврата, после `>` идёт хвостовая
-        // точка «Тип: СправочникСсылка.<Имя справочника>.» — flushTypeLine
+        // точка «Тип: СправочникСсылка.<Имя справочника>.» — flushTypeName
         // должен срезать её, иначе rawReturnValues остаётся с лишней точкой
         // и typeIndex.get(...) не резолвится (returnValues пуст).
         var emptyRef = managerGeneric.methods().stream()
@@ -822,6 +823,25 @@ class RealHbkSmokeTest {
             .as("ПустаяСсылка должна возвращать СправочникСсылка.<…> (без хвостовой точки)")
             .extracting(c -> c.name().getName())
             .anyMatch(n -> n.startsWith("СправочникСсылка.<"));
+
+        // Разделители типов возврата помимо запятой: «;» с пояснением после,
+        // «или», ссылки встык без разделителя.
+        var commonTemplate = global.methods().stream()
+            .filter(m -> m.name().getName().equals("ПолучитьОбщийМакет"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("ПолучитьОбщийМакет not found"));
+        assertThat(commonTemplate.returnValues())
+            .as("«ТабличныйДокумент, ТекстовыйДокумент; другой объект, …»")
+            .extracting(c -> c.name().getName())
+            .containsExactly("ТабличныйДокумент", "ТекстовыйДокумент");
+        assertThat(methodOf(provider, "КоллекцияЗначенийПараметровКомпоновкиДанных", "Получить").returnValues())
+            .as("«ЗначениеПараметраКомпоновкиДанных или ЗначениеПараметраНастроекКомпоновкиДанных»")
+            .extracting(c -> c.name().getName())
+            .containsExactly("ЗначениеПараметраКомпоновкиДанных", "ЗначениеПараметраНастроекКомпоновкиДанных");
+        assertThat(methodOf(provider, "КолонкиВременнойТаблицыЗапроса", "Найти").returnValues())
+            .as("<a>КолонкаВременнойТаблицыЗапроса</a><a>Неопределено</a> — ссылки встык")
+            .extracting(c -> c.name().getName())
+            .containsExactly("КолонкаВременнойТаблицыЗапроса", "Неопределено");
 
         // === Constructor parameters ===
         // Массив имеет два конструктора — variadic «По количеству элементов»
@@ -878,6 +898,22 @@ class RealHbkSmokeTest {
         assertThat(n.getAlias())
             .as("%s.valueType().en — должен резолвиться через bindBilingualValueType", enumName)
             .isEqualTo(expectedEn);
+    }
+
+    private static ContextMethod methodOf(
+        ContextProvider provider,
+        String typeName,
+        String methodName
+    ) {
+        var ctx = provider.getContextByName(typeName).orElseThrow(() ->
+            new AssertionError("type not found: " + typeName));
+        assertThat(ctx)
+            .as("%s должен быть ContextType", typeName)
+            .isInstanceOf(ContextType.class);
+        return ((ContextType) ctx).methods().stream()
+            .filter(m -> m.name().getName().equals(methodName))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("method not found: " + typeName + "." + methodName));
     }
 
     private static void assertResolves(
