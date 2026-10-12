@@ -49,7 +49,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.1c-syntax:bsl-help-toc-parser:0.2.0")
+    implementation("io.github.1c-syntax:bsl-help-toc-parser:0.2.1")
     implementation("org.jsoup:jsoup:1.18.3")
 
     compileOnly("org.projectlombok:lombok:1.18.34")
