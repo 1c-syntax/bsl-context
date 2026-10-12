@@ -318,11 +318,25 @@ public class PlatformContextGrabber {
         return pages;
     }
 
-    private static TableOfContent getTreeSyntaxHelper(byte[] data) throws IOException {
+    /**
+     * Прочитать оглавление справки из сжатого PackBlock.
+     * <p>
+     * Разборщик оглавления читает только файл, поэтому оглавление на время чтения пишется во
+     * временный файл; после чтения файл удаляется.
+     *
+     * @param data PackBlock из HBK: zip с оглавлением
+     * @return оглавление справки
+     * @throws IOException если временный файл не удалось записать
+     */
+    static TableOfContent getTreeSyntaxHelper(byte[] data) throws IOException {
         var inflatePackBlock = getInflatePackBlock(data);
         var tmpFile = Files.createTempFile("packBlock", "");
-        Files.write(tmpFile, inflatePackBlock);
-        return TableOfContent.readTableOfContent(tmpFile);
+        try {
+            Files.write(tmpFile, inflatePackBlock);
+            return TableOfContent.readTableOfContent(tmpFile);
+        } finally {
+            Files.deleteIfExists(tmpFile);
+        }
     }
 
     private static byte[] getInflatePackBlock(byte[] data) {
