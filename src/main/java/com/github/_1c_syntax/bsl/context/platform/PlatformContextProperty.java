@@ -46,6 +46,11 @@ public class PlatformContextProperty implements ContextProperty {
     }
 
     @Override
+    public boolean hasUnresolvedTypes() {
+        return rawTypes != null && types.size() < rawTypes.size();
+    }
+
+    @Override
     public List<Context> collectionElementTypes() {
         return List.copyOf(collectionElementTypes);
     }

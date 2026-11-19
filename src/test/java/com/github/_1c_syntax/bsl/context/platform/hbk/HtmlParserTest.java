@@ -97,6 +97,13 @@ class HtmlParserTest {
     // --- methods ---
 
     @Test
+    void parseParameterTypeSplitAcrossHtmlNodes() throws URISyntaxException {
+        var method = parseMethodPage("methods/method_with_split_type");
+        assertThat(method.getSignatures().getFirst().getParameters().getFirst())
+            .hasFieldOrPropertyWithValue("types", List.of("СсылкаНаЭлемент.<Имя элемента>", "Булево", "Ссылочные значения"));
+    }
+
+    @Test
     void parseMethodPage_NoParamsNoReturn() throws URISyntaxException {
         var method = parseMethodPage("methods/method_no_params_no_return");
         assertThat(method.getDescription()).contains("Описание для теста");
