@@ -100,7 +100,17 @@ class HtmlParserTest {
     void parseParameterTypeSplitAcrossHtmlNodes() throws URISyntaxException {
         var method = parseMethodPage("methods/method_with_split_type");
         assertThat(method.getSignatures().getFirst().getParameters().getFirst())
-            .hasFieldOrPropertyWithValue("types", List.of("СсылкаНаЭлемент.<Имя элемента>", "Булево", "Ссылочные значения"));
+            .hasFieldOrPropertyWithValue("types",
+                List.of("СсылкаНаЭлемент.<Имя элемента>", "Булево", "ОбъектМетаданных: Макет", "Ссылочные значения"));
+    }
+
+    @Test
+    void parseMethodPage_ParameterTypeEndsAtChapterWithoutBr() throws URISyntaxException {
+        var method = parseMethodPage("methods/method_parameter_type_before_chapter");
+        assertThat(method.getSignatures().getFirst().getParameters()).singleElement()
+            .hasFieldOrPropertyWithValue("types", List.of("Строка"));
+        assertThat(method.getReturnValues()).containsExactly("Булево");
+        assertThat(method.getReturnValueDescription()).contains("Результат проверки.");
     }
 
     @Test

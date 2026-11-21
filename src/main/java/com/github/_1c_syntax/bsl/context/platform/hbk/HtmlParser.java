@@ -292,7 +292,7 @@ public class HtmlParser {
   }
 
   /**
-   * Разделители типов в тексте строки «Тип: …» секции «Возвращаемое значение:».
+   * Разделители типов в строке «Тип: …».
    * Кроме запятой СП использует:
    * <ul>
    *   <li>«;» — за ним обычно идёт пояснение, но бывают и ещё типы
@@ -302,7 +302,7 @@ public class HtmlParser {
    *   <li>скобки — типы перечислены внутри пояснения
    *       ({@code значения системных перечислений (ВидСчета, …)}).</li>
    * </ul>
-   * Ищутся только в текстовых узлах: внутри ссылки двоеточие — часть имени
+   * Ищутся в тексте вне ссылок: внутри ссылки двоеточие — часть имени
    * ({@code ОбъектМетаданных: Макет}). Куски пояснений, попавшие в имена,
    * отсеиваются при резолве типов.
    */
@@ -311,7 +311,7 @@ public class HtmlParser {
     Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
   /**
-   * Дописывает текстовый узел строки «Тип: …» к текущему имени типа: на каждом
+   * Дописывает текст вне ссылки к текущему имени типа: на каждом
    * разделителе ({@link #TYPE_SEPARATOR}) накопленное имя сбрасывается
    * в {@code returnValues}.
    */
@@ -356,12 +356,17 @@ public class HtmlParser {
 
     void append(Node node, List<String> types) {
       if (node instanceof Element element) {
-        var link = element.tagName().equalsIgnoreCase("a");
-        if (link && afterLink) {
+        if (!element.tagName().equalsIgnoreCase("a")) {
+          for (Node child : element.childNodes()) {
+            append(child, types);
+          }
+          return;
+        }
+        if (afterLink) {
           flushTypeName(name, types);
         }
         name.append(element.text());
-        afterLink = link;
+        afterLink = true;
       } else if (node instanceof TextNode text && !(afterLink && text.isBlank())) {
         appendTypeText(text.text(), name, types);
         afterLink = false;
@@ -1746,6 +1751,7 @@ public class HtmlParser {
           }
 
           currentMethodSignatureParameterDescription = new MethodSignatureParameterDescription();
+          typeSection = false;
 
           var match = parameterNamePattern.matcher(n.text());
 
@@ -1757,6 +1763,14 @@ public class HtmlParser {
             currentMethodSignatureParameterDescription.isRequired = true;
           }
 
+        } else if (node.attr("class").equals("V8SH_chapter")) {
+          if (currentMethodSignatureParameterDescription != null) {
+            parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
+            currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
+            currentMethodSignatureParameterDescription = null;
+          }
+          parametersSection = false;
+          typeSection = false;
         } else {
 
           if (node instanceof TextNode n && containsTypeMarker(n.text())) {
@@ -1773,16 +1787,6 @@ public class HtmlParser {
               parameterTypeLine.append(node, currentMethodSignatureParameterDescription.types);
             }
 
-          } else if (node.attr("class").equals("V8SH_chapter")) {
-            // Выход из секции параметров на следующий V8SH_chapter — нужно
-            // закоммитить накопленный параметр сразу, иначе он может «утечь»
-            // в следующую секцию V8SH_rubric (например, в Возвращаемое значение).
-            if (currentMethodSignatureParameterDescription != null) {
-              parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
-              currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
-              currentMethodSignatureParameterDescription = null;
-            }
-            parametersSection = false;
           } else {
             var text = "";
 
