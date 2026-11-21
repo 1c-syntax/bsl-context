@@ -25,6 +25,11 @@ public interface ContextProperty {
      */
     List<Context> types();
 
+    /** True if at least one documented type could not be resolved. */
+    default boolean hasUnresolvedTypes() {
+        return false;
+    }
+
     /**
      * Описание свойства
      */

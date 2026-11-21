@@ -97,6 +97,23 @@ class HtmlParserTest {
     // --- methods ---
 
     @Test
+    void parseParameterTypeSplitAcrossHtmlNodes() throws URISyntaxException {
+        var method = parseMethodPage("methods/method_with_split_type");
+        assertThat(method.getSignatures().getFirst().getParameters().getFirst())
+            .hasFieldOrPropertyWithValue("types",
+                List.of("СсылкаНаЭлемент.<Имя элемента>", "Булево", "ОбъектМетаданных: Макет", "Ссылочные значения"));
+    }
+
+    @Test
+    void parseMethodPage_ParameterTypeEndsAtChapterWithoutBr() throws URISyntaxException {
+        var method = parseMethodPage("methods/method_parameter_type_before_chapter");
+        assertThat(method.getSignatures().getFirst().getParameters()).singleElement()
+            .hasFieldOrPropertyWithValue("types", List.of("Строка"));
+        assertThat(method.getReturnValues()).containsExactly("Булево");
+        assertThat(method.getReturnValueDescription()).contains("Результат проверки.");
+    }
+
+    @Test
     void parseMethodPage_NoParamsNoReturn() throws URISyntaxException {
         var method = parseMethodPage("methods/method_no_params_no_return");
         assertThat(method.getDescription()).contains("Описание для теста");

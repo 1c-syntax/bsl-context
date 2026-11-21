@@ -20,6 +20,11 @@ public interface ContextMethod {
      */
     List<Context> returnValues();
 
+    /** True if at least one documented type could not be resolved. */
+    default boolean hasUnresolvedReturnTypes() {
+        return false;
+    }
+
     /**
      * Сигнатуры метода.
      */

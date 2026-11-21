@@ -50,6 +50,11 @@ public class PlatformContextSignatureParameter implements ContextSignatureParame
   }
 
   @Override
+  public boolean hasUnresolvedTypes() {
+    return rawTypes != null && types.size() < rawTypes.size();
+  }
+
+  @Override
   public String description() {
     return description;
   }

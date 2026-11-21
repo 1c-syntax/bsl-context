@@ -58,6 +58,11 @@ public class PlatformContextMethod implements ContextMethod {
     }
 
     @Override
+    public boolean hasUnresolvedReturnTypes() {
+        return rawReturnValues != null && returnValues.size() < rawReturnValues.size();
+    }
+
+    @Override
     public String description() {
         return description;
     }
