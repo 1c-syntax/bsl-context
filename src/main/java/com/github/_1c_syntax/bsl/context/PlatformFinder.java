@@ -20,8 +20,9 @@ import java.util.stream.Stream;
  * <ul>
  *   <li>Windows: {@code C:\Program Files\{1Cv8,1Cv82,1Cv8t}\<version>\bin\}
  *       — HBK в подкаталоге {@code bin/}.</li>
- *   <li>Linux: {@code /opt/1cv8/{i386,x86_64}/<version>/} и
- *       {@code /opt/1C/v8.<X>/{i386,x86_64}/<version>/} —
+ *   <li>Linux: {@code /opt/1cv8/<arch>/<version>/} и
+ *       {@code /opt/1C/v8.<X>/<arch>/<version>/}, где {@code <arch>} —
+ *       любой подкаталог ({@code i386}, {@code x86_64}, {@code arm64}, ...) —
  *       HBK живёт <b>прямо в version-каталоге</b>, без {@code bin/}.</li>
  *   <li>macOS: {@code /opt/1cv8/<version>/} — HBK прямо в version-каталоге.</li>
  * </ul>
@@ -77,10 +78,25 @@ public final class PlatformFinder {
      * от старшей версии к младшей.
      */
     public static List<PlatformInstall> findAllInstalls() {
-        var roots = collectRoots();
+        return findInstalls(collectRoots(), IS_WINDOWS);
+    }
+
+    /**
+     * Ищет установки платформы в переданных корневых каталогах: каждый
+     * подкаталог корня с именем вида {@code 8.X.Y.Z}, содержащий
+     * {@code shcntx_ru.hbk}, считается установкой.
+     *
+     * @param roots    каталоги, непосредственно содержащие version-каталоги;
+     *                 несуществующие и недоступные пропускаются
+     * @param hbkInBin {@code true} — файлы синтакс-помощника лежат в
+     *                 подкаталоге {@code bin/} version-каталога (Windows),
+     *                 {@code false} — прямо в version-каталоге (Linux/macOS)
+     * @return найденные установки, от старшей версии к младшей
+     */
+    static List<PlatformInstall> findInstalls(List<Path> roots, boolean hbkInBin) {
         var installs = new ArrayList<PlatformInstall>();
         for (var root : roots) {
-            scanRoot(root, installs);
+            scanRoot(root, hbkInBin, installs);
         }
         installs.sort(Comparator.reverseOrder());
         return installs;
@@ -112,7 +128,7 @@ public final class PlatformFinder {
         } else if (os.contains("mac") || os.contains("darwin")) {
             roots.add(Path.of("/opt/1cv8"));
         } else {
-            collectLinuxRoots(roots);
+            roots.addAll(linuxRoots(Path.of("/opt")));
         }
         return roots;
     }
@@ -127,27 +143,40 @@ public final class PlatformFinder {
         }
     }
 
-    private static void collectLinuxRoots(List<Path> roots) {
-        for (var path : List.of("/opt/1cv8/i386", "/opt/1cv8/x86_64")) {
-            roots.add(Path.of(path));
+    /**
+     * Корневые каталоги установок платформы на Linux — каталоги, непосредственно
+     * содержащие version-каталоги.
+     *
+     * @param optDir каталог, в котором ищутся {@code 1cv8} и {@code 1C/v8.*}
+     *               (в реальной системе — {@code /opt})
+     * @return существующие подкаталоги {@code 1cv8} и {@code 1C/v8.*};
+     *         пустой список, если ни одного нет
+     */
+    static List<Path> linuxRoots(Path optDir) {
+        // Подкаталоги архитектур (i386, x86_64, arm64, ...) не перечисляются
+        // явно: корнем считается любой подкаталог, чтобы новая архитектура
+        // не требовала правки списка. Лишние подкаталоги (conf, симлинк
+        // current и т.п.) безвредны — в них нет version-каталогов.
+        var roots = new ArrayList<>(subdirectories(optDir.resolve("1cv8")));
+        subdirectories(optDir.resolve("1C")).stream()
+            .filter(p -> p.getFileName().toString().startsWith("v8"))
+            .forEach(v8Dir -> roots.addAll(subdirectories(v8Dir)));
+        return roots;
+    }
+
+    private static List<Path> subdirectories(Path dir) {
+        if (!Files.isDirectory(dir)) {
+            return List.of();
         }
-        var opt1c = Path.of("/opt/1C");
-        if (Files.isDirectory(opt1c)) {
-            try (Stream<Path> children = Files.list(opt1c)) {
-                children
-                    .filter(Files::isDirectory)
-                    .filter(p -> p.getFileName().toString().startsWith("v8"))
-                    .forEach(p -> {
-                        roots.add(p.resolve("i386"));
-                        roots.add(p.resolve("x86_64"));
-                    });
-            } catch (IOException ignored) {
-                // нет доступа — пропускаем
-            }
+        try (Stream<Path> children = Files.list(dir)) {
+            return children.filter(Files::isDirectory).sorted().toList();
+        } catch (IOException ignored) {
+            // нет доступа — пропускаем
+            return List.of();
         }
     }
 
-    private static void scanRoot(Path root, List<PlatformInstall> sink) {
+    private static void scanRoot(Path root, boolean hbkInBin, List<PlatformInstall> sink) {
         if (!Files.isDirectory(root)) {
             return;
         }
@@ -155,17 +184,17 @@ public final class PlatformFinder {
             children
                 .filter(Files::isDirectory)
                 .filter(p -> VERSION_DIR.matcher(p.getFileName().toString()).matches())
-                .forEach(versionDir -> tryAddInstall(versionDir, sink));
+                .forEach(versionDir -> tryAddInstall(versionDir, hbkInBin, sink));
         } catch (IOException ignored) {
             // нет доступа — пропускаем
         }
     }
 
-    private static void tryAddInstall(Path versionDir, List<PlatformInstall> sink) {
+    private static void tryAddInstall(Path versionDir, boolean hbkInBin, List<PlatformInstall> sink) {
         // На Windows HBK живёт в подкаталоге bin/; на Linux/macOS — прямо
         // в version-каталоге (см. v8find/СоздательВерсииПлатформы.os
         // → ПолучитьПутьКФайлу, ветка ЭтоWindows / Иначе).
-        var hbkDir = IS_WINDOWS ? versionDir.resolve("bin") : versionDir;
+        var hbkDir = hbkInBin ? versionDir.resolve("bin") : versionDir;
         var hbk = hbkDir.resolve("shcntx_ru.hbk");
         if (Files.isRegularFile(hbk)) {
             sink.add(new PlatformInstall(versionDir.getFileName().toString(), hbkDir));
