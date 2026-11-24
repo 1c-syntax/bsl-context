@@ -292,7 +292,7 @@ public class HtmlParser {
   }
 
   /**
-   * Разделители типов в тексте строки «Тип: …» секции «Возвращаемое значение:».
+   * Разделители типов в строке «Тип: …».
    * Кроме запятой СП использует:
    * <ul>
    *   <li>«;» — за ним обычно идёт пояснение, но бывают и ещё типы
@@ -302,21 +302,21 @@ public class HtmlParser {
    *   <li>скобки — типы перечислены внутри пояснения
    *       ({@code значения системных перечислений (ВидСчета, …)}).</li>
    * </ul>
-   * Ищутся только в текстовых узлах: внутри ссылки двоеточие — часть имени
+   * Ищутся в тексте вне ссылок: внутри ссылки двоеточие — часть имени
    * ({@code ОбъектМетаданных: Макет}). Куски пояснений, попавшие в имена,
    * отсеиваются при резолве типов.
    */
-  private static final Pattern RETURN_TYPE_SEPARATOR = Pattern.compile(
+  private static final Pattern TYPE_SEPARATOR = Pattern.compile(
     "[,;:()]|(?<![\\p{L}\\d])(?:или|or)(?![\\p{L}\\d])",
     Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
 
   /**
-   * Дописывает текстовый узел строки «Тип: …» к текущему имени типа: на каждом
-   * разделителе ({@link #RETURN_TYPE_SEPARATOR}) накопленное имя сбрасывается
+   * Дописывает текст вне ссылки к текущему имени типа: на каждом
+   * разделителе ({@link #TYPE_SEPARATOR}) накопленное имя сбрасывается
    * в {@code returnValues}.
    */
   private static void appendTypeText(String text, StringBuilder typeName, List<String> returnValues) {
-    var parts = RETURN_TYPE_SEPARATOR.split(text, -1);
+    var parts = TYPE_SEPARATOR.split(text, -1);
     typeName.append(parts[0]);
     for (int i = 1; i < parts.length; i++) {
       flushTypeName(typeName, returnValues);
@@ -342,6 +342,41 @@ public class HtmlParser {
       returnValues.add(trimmed);
     }
     typeName.setLength(0);
+  }
+
+  private static final class ParameterTypeLine {
+    private final StringBuilder name = new StringBuilder();
+    private boolean afterLink;
+
+    void start(String text, List<String> types) {
+      finish(types);
+      int marker = indexOfTypeMarker(text);
+      appendTypeText(text.substring(marker + typeMarkerLength(text, marker)), name, types);
+    }
+
+    void append(Node node, List<String> types) {
+      if (node instanceof Element element) {
+        if (!element.tagName().equalsIgnoreCase("a")) {
+          for (Node child : element.childNodes()) {
+            append(child, types);
+          }
+          return;
+        }
+        if (afterLink) {
+          flushTypeName(name, types);
+        }
+        name.append(element.text());
+        afterLink = true;
+      } else if (node instanceof TextNode text && !(afterLink && text.isBlank())) {
+        appendTypeText(text.text(), name, types);
+        afterLink = false;
+      }
+    }
+
+    void finish(List<String> types) {
+      flushTypeName(name, types);
+      afterLink = false;
+    }
   }
 
   /**
@@ -1509,6 +1544,7 @@ public class HtmlParser {
 
     MethodSignatureDescription currentMethodSignatureDescription = null;
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
+    var parameterTypeLine = new ParameterTypeLine();
 
     // Ссылка «См. также» кодируется парой <a>: владелец (type-ссылка) + член
     // (ссылка с member-маркером). Член уже несёт владельца через href, поэтому
@@ -1522,7 +1558,7 @@ public class HtmlParser {
     // <span>&lt;</span><a>Имя справочника</a><span>&gt;</span>. Чтобы не
     // получать на выходе ["СправочникОбъект.", "<", "Имя справочника", ">"],
     // склеиваем соседние элементы в одно имя; границы имён — разделители в
-    // текстовых узлах (см. RETURN_TYPE_SEPARATOR) и две ссылки подряд.
+    // текстовых узлах (см. TYPE_SEPARATOR) и две ссылки подряд.
     var currentTypeName = new StringBuilder();
     // Предыдущий узел строки типа — ссылка. Ссылки встык (или через пробел)
     // — разные типы: «<a>КолонкаВременнойТаблицыЗапроса</a><a>Неопределено</a>»;
@@ -1710,10 +1746,12 @@ public class HtmlParser {
             && node instanceof Element n) {
 
           if (currentMethodSignatureParameterDescription != null) {
+            parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
             currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
           }
 
           currentMethodSignatureParameterDescription = new MethodSignatureParameterDescription();
+          typeSection = false;
 
           var match = parameterNamePattern.matcher(n.text());
 
@@ -1725,34 +1763,30 @@ public class HtmlParser {
             currentMethodSignatureParameterDescription.isRequired = true;
           }
 
+        } else if (node.attr("class").equals("V8SH_chapter")) {
+          if (currentMethodSignatureParameterDescription != null) {
+            parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
+            currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
+            currentMethodSignatureParameterDescription = null;
+          }
+          parametersSection = false;
+          typeSection = false;
         } else {
 
           if (node instanceof TextNode n && containsTypeMarker(n.text())) {
             typeSection = true;
 
-            if (containsArbitraryType(n.text())) {
-              currentMethodSignatureParameterDescription.types.add("Произвольный");
-            }
+            parameterTypeLine.start(n.text(), currentMethodSignatureParameterDescription.types);
 
           } else if (typeSection) {
 
             if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+              parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
               typeSection = false;
-            } else if (node instanceof Element n) {
-              currentMethodSignatureParameterDescription.types.add(n.text());
-            } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
-              currentMethodSignatureParameterDescription.types.add("Произвольный");
+            } else {
+              parameterTypeLine.append(node, currentMethodSignatureParameterDescription.types);
             }
 
-          } else if (node.attr("class").equals("V8SH_chapter")) {
-            // Выход из секции параметров на следующий V8SH_chapter — нужно
-            // закоммитить накопленный параметр сразу, иначе он может «утечь»
-            // в следующую секцию V8SH_rubric (например, в Возвращаемое значение).
-            if (currentMethodSignatureParameterDescription != null) {
-              currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
-              currentMethodSignatureParameterDescription = null;
-            }
-            parametersSection = false;
           } else {
             var text = "";
 
@@ -1843,6 +1877,7 @@ public class HtmlParser {
         if (t.contains("Вариант синтаксиса:") || t.contains("Syntax variant:")) {
 
           if (currentMethodSignatureParameterDescription != null) {
+            parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
             currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
             currentMethodSignatureParameterDescription = null;
           }
@@ -1866,6 +1901,7 @@ public class HtmlParser {
     }
 
     if (currentMethodSignatureParameterDescription != null) {
+      parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
       currentMethodSignatureDescription.parameters.add(currentMethodSignatureParameterDescription);
     }
 
@@ -1886,6 +1922,7 @@ public class HtmlParser {
     var result = new ConstructorDescription();
     result.recommendedReplacements = findRecommendedReplacements(document);
     MethodSignatureParameterDescription currentMethodSignatureParameterDescription = null;
+    var parameterTypeLine = new ParameterTypeLine();
 
     var isDescription = false;
     var isParameters = false;
@@ -1979,6 +2016,7 @@ public class HtmlParser {
           && node instanceof Element n) {
 
           if (currentMethodSignatureParameterDescription != null) {
+            parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
             result.parameters.add(currentMethodSignatureParameterDescription);
           }
 
@@ -1999,18 +2037,15 @@ public class HtmlParser {
           if (node instanceof TextNode n && containsTypeMarker(n.text())) {
             isTypeSection = true;
 
-            if (containsArbitraryType(n.text())) {
-              currentMethodSignatureParameterDescription.types.add("Произвольный");
-            }
+            parameterTypeLine.start(n.text(), currentMethodSignatureParameterDescription.types);
 
           } else if (isTypeSection) {
 
             if (node instanceof Element n && n.tag().equals(Tag.valueOf("br"))) {
+              parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
               isTypeSection = false;
-            } else if (node instanceof Element n) {
-              currentMethodSignatureParameterDescription.types.add(n.text());
-            } else if (node instanceof TextNode n && containsArbitraryType(n.text())) {
-              currentMethodSignatureParameterDescription.types.add("Произвольный");
+            } else {
+              parameterTypeLine.append(node, currentMethodSignatureParameterDescription.types);
             }
 
           } else if (node.attr("class").equals("V8SH_chapter")) {
@@ -2024,6 +2059,7 @@ public class HtmlParser {
     }
 
     if (currentMethodSignatureParameterDescription != null) {
+      parameterTypeLine.finish(currentMethodSignatureParameterDescription.types);
       result.parameters.add(currentMethodSignatureParameterDescription);
     }
 
